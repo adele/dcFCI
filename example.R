@@ -47,12 +47,14 @@ indepTest <- mixedCITest
 suffStat <- getMixedCISuffStat(dat, vars_names, covs_names)
 vars_df <- dat[,vars_names, drop=FALSE]
 citestResults <- getAllCITestResults(vars_df, indepTest, suffStat,
-                                     m.max=Inf, computeProbs = TRUE)
+                                     m.max=Inf, computeProbs = TRUE,
+                                     eff_size = NULL # uses max RMSE
+                                     )
 suffStat$citestResults <- citestResults # so we don´t redo tests later
 
 # Checking faithfulness degree
 faithf_degree <- getFaithfulnessDegree(true.amat.pag, citestResults, alpha = 0.01)
-
+faithf_degree$f_citestResults
 
 
 ##########################################
