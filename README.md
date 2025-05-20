@@ -74,6 +74,19 @@ install.packages("./MXM_1.5.5.tar.gz", repos = NULL, type = "source")
 
 ---
 
+### 5. Install FCI.Utils
+
+The FCI.Utils R package is available at <https://github.com/adele/FCI.Utils>/
+
+You can install the development version directly from GitHub:
+
+``` r
+install.packages("devtools", dependencies=TRUE)
+devtools::install_github("adele/FCI.Utils", dependencies=TRUE)
+```
+
+---
+
 ## 🐧 Optional: System Dependencies for Debian/Ubuntu Linux
 
 The following system libraries may be required for full functionality (e.g., for graphics rendering, parallel processing, or Rcpp-based packages). You can install them using:
