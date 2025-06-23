@@ -4,12 +4,30 @@ Implementation of the data-compatible Fast Causal Inference (dcFCI) algorithm by
 
 [Paper on ArXiv](https://www.arxiv.org/pdf/2505.06542)
 
+### Citation
 
-This guide walks you through all necessary steps to install dependencies and set up the package environment in **R**, including how to install archived versions of required packages.
+If you use this work, please cite:
+
+Ribeiro, A. H., & Heider, D. (2025). dcFCI: Robust Causal Discovery Under Latent Confounding, Unfaithfulness, and Mixed Data. ArXiv preprint arXiv:2505.06542. https://arxiv.org/abs/2505.06542
+
+```
+@misc{ribeiro2025dcfcirobustcausaldiscovery,
+      title={dcFCI: Robust Causal Discovery Under Latent Confounding, Unfaithfulness, and Mixed Data}, 
+      author={Adèle H. Ribeiro and Dominik Heider},
+      year={2025},
+      eprint={2505.06542},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2505.06542}, 
+}
+```
 
 ---
 
 ## 📦 Step-by-Step Installation Instructions
+
+This guide walks you through all necessary steps to install dependencies and set up the package environment in **R**, including how to install archived versions of required packages.
+
 
 ### 1. Install Bioconductor Dependencies
 
