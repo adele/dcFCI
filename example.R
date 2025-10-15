@@ -30,7 +30,7 @@ renderAG(true.amat.pag, add_index = F)
 
 
 # Generating a dataset according to the true ADMG
-data_type = "mixed" #continuous
+data_type = "mixed" # "continuous" #
 N <- 10000
 
 if (data_type == "continuous") {
@@ -134,13 +134,20 @@ fci_metrics$shd
 
 sel_top = 1 # parameter k in the paper
 
+
+# alpha=0.05;
+# NAdelete = FALSE; m.max = Inf; fixedGaps = NULL; fixedEdges = NULL;
+# verbose = TRUE; sel_top = 1; prob_sel_top = 1;
+# run_parallel = TRUE; allowNewTests=TRUE;
+# list.max = 500; pH0Thresh=0.9
+
+
 start_time <- Sys.time()
-fit_dcfci <- dcFCI(suffStat, mixedCITest,
-                   labels=labels, alpha=alpha,
-                   NAdelete = NAdelete,  m.max=m.max,
-                   fixedGaps = fixedGaps, fixedEdges = fixedEdges,
-                   verbose = verbose, sel_top = sel_top,
-                   run_parallel = run_parallel)
+fit_dcfci <- dcFCI(suffStat, indepTest, labels, alpha=0.05,
+                   NAdelete = FALSE, m.max = Inf, fixedGaps = NULL, fixedEdges = NULL,
+                   verbose = TRUE, sel_top = 1, prob_sel_top = 1,
+                   run_parallel = TRUE, allowNewTests=TRUE,
+                   list.max = 500, pH0Thresh=1) # we can choose a pH0 threshold, e.g., 0.9
 end_time <- Sys.time()
 time_taken <- end_time - start_time
 
@@ -163,6 +170,11 @@ dcfci_sepset <- fit_dcfci$top_dcPAGs[[1]]$sepset
 formatSepset(dcfci_sepset)
 fci_metrics$shd
 
+# PAG scores:
+fit_dcfci$scoresDF
+
+# Score of the top PAGs:
+fit_dcfci$top_scoresDF
 
 ########################
 # Printing the results #

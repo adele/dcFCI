@@ -247,10 +247,10 @@ processPotPAG <- function(potPAG, ord, citestResults, indepTest, suffStat, NAdel
 #' @importFrom pcalg udag2pag
 #' @export dcFCI
 dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
-                  NAdelete = TRUE, m.max = Inf, fixedGaps = NULL, fixedEdges = NULL,
+                  NAdelete = FALSE, m.max = Inf, fixedGaps = NULL, fixedEdges = NULL,
                   verbose = TRUE, sel_top = 1, prob_sel_top = FALSE,
                   run_parallel = TRUE, allowNewTests=TRUE,
-                  list.max = 500) {
+                  list.max = 500, pH0Thresh=1) {
 
   score_type = "cur_diffs"
   ord_global_score = "global_score"
@@ -265,7 +265,52 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
 
   getToProcessPAGList <- function(curpag, ord, fixedEdges, alpha, citestResults,
                                   indepTest, suffStat, NAdelete, verbose,
+                                  pH0Thresh=1,
                                   allowNewTests=TRUE) {
+
+
+    # for generating the sepsetResultsList
+    checkSepsetResults <- function(ids, sepsetResults, certainSepsetResults) {
+      curSepsetResults <- sepsetResults[ids, ]
+      if (length(unique(curSepsetResults[,c(2:3)])) < nrow(curSepsetResults)) {
+        # there are "duplicated" pairs, so we skip it.
+        return(NULL)
+      }
+      return(rbind(certainSepsetResults, curSepsetResults))
+    }
+
+    # for generating all potPAGs in parallel
+    createToProcessPAGList <- function(curSepsetResults, curpag, sepset, ord) {
+      # generate a PAG for a given curSepsetResults
+      # (an element of the sepsetResults of the list
+
+      potAdjM <- curpag$amat.pag > 0
+      potSepset <- sepset
+      doneEdges <- curpag$doneEdges
+      for (i in 1:nrow(curSepsetResults)) {
+        x = curSepsetResults[i,"X"]
+        y = curSepsetResults[i,"Y"]
+        S = getSepVector(curSepsetResults[i, "S"])
+
+        potAdjM[x, y] <- potAdjM[y, x] <- 0
+        potSepset[[x]][[y]] <- potSepset[[y]][[x]] <- S
+        doneEdges[x, y] <- doneEdges[y, x] <- TRUE
+      }
+
+      potPAG <-  list(amat.pag = potAdjM, # to be processed
+                      sepset = potSepset, # the used sepset
+                      mec = NULL, # to be computed
+                      scores = curpag$scores,
+                      sepsetResults = curSepsetResults, # used sepset with pvalues
+                      doneEdges = doneEdges,
+                      curord = ord,
+                      violations = NA,
+                      done = FALSE,
+                      ordPAGs=curpag$ordPAGs)
+      return(potPAG)
+    }
+
+
     pagAdjM <-  curpag$amat.pag
     p <- ncol(pagAdjM)
     doneEdges <- curpag$doneEdges
@@ -283,66 +328,66 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     curpag$doneEdges <- sepsetResultsOut$doneEdges
     curpag$done <- TRUE # its sepset won't change
 
-    # this creates a pag corresponding to each possible combination of the sepsets
+
+    # # this creates a pag corresponding to each possible combination of the sepsets
     toProcessPAGList <- list()
+
+
+    # sepsetResults can still have pairs with more than one minimal sepset
+    # we have to make the list of all possible sepsetResults, but each containing at most
+    # one minimal sepset by pair. Those are already part of the powerSet. So we simply
+    # discard sepsetResults with "duplicated" pairs.
+    sepsetResultsList <- list()
     if (!is.null(sepsetResults) && nrow(sepsetResults) > 0) {
-      unique_sep_pairs <- unique(sepsetResults[,c(2:3)])
-      listS <- list()
-      for (pair_row in 1:nrow(unique_sep_pairs)) {
-        listS[[pair_row]] <- subset(sepsetResults, X==unique_sep_pairs[pair_row,1] &
-                                  Y == unique_sep_pairs[pair_row,2], select = "S", drop=TRUE)
-      }
 
 
-      allCombSepsetPairs <- powerSet(1:nrow(unique_sep_pairs))[-1]  # removes the empty set
+      # generate all curSepsetResults first in parallel
+      certainSepsetResults <- subset(sepsetResults, pH0 >= pH0Thresh)
+      # if more than one minimal separator is certain, we just get one of them ...
+      # and ignore the others (which are, by the criterion of the pH0thresh, correct)
+      # TODO: this may lead to violations -- should we not consider pairs
+      # with more than one "certain" minimal separator as certain?
+      certainPairs <- unique(certainSepsetResults[,c(2:3)])
 
-      for (k in 1:length(allCombSepsetPairs)) {
-        curSepPairs <- allCombSepsetPairs[[k]]
-        if (verbose) {
-          print(paste0("Generating toProcessPAGList for curSepPairs number: ", k, "/", length(allCombSepsetPairs)))
+
+      # separated pairs from 'certainPairs' should be removed, regardless of the minimal sep
+      for (pair_row in 1:nrow(certainPairs)) {
+        rows_to_rm <- which(sepsetResults$X==certainPairs[pair_row,1] &
+                              sepsetResults$Y == certainPairs[pair_row,2])
+        if (length(rows_to_rm) > 0) {
+          sepsetResults <- sepsetResults[-rows_to_rm, ]
         }
-        # pairs as rows of the unique_sep_pairs
-        combinationsS <- expand.grid(listS[curSepPairs], stringsAsFactors = FALSE)
-
-        curToProcessPAGList <-
-          foreach (combSrow = 1:nrow(combinationsS),
-                   .options.future = list(seed = TRUE))  %dofuture% {
-            potAdjM <- curpag$amat.pag > 0
-            potSepset <- sepset
-            doneEdges <- curpag$doneEdges
-            curSepsetResults <- c()
-
-            # iterating over the current pair rows of the unique_sep_pairs
-            for (i in 1:length(curSepPairs)) {
-              pair_rowid <- curSepPairs[i]
-              x = unique_sep_pairs[pair_rowid,1]
-              y = unique_sep_pairs[pair_rowid,2]
-              Sstr = combinationsS[combSrow, i]
-
-              S <- FCI.Utils::getSepVector(Sstr)
-              curSepsetResults <- rbind(curSepsetResults,
-                                        subset(sepsetResults, X == x & Y == y & S == Sstr))
-
-              potAdjM[x, y] <- potAdjM[y, x] <- 0
-              potSepset[[x]][[y]] <- potSepset[[y]][[x]] <- S
-              doneEdges[x, y] <- doneEdges[y, x] <- TRUE
-            }
-
-            potPAG <-  list(amat.pag = potAdjM, # to be processed
-                            sepset = potSepset, # the used sepset
-                            mec = NULL, # to be computed
-                            scores = curpag$scores,
-                            sepsetResults = rbind(curpag$sepsetResults, curSepsetResults), # used sepset with pvalues
-                            doneEdges = doneEdges,
-                            curord = ord,
-                            violations = NA,
-                            done = FALSE,
-                            ordPAGs=curpag$ordPAGs)
-           return(potPAG)
-            }
-        toProcessPAGList <- c(toProcessPAGList, curToProcessPAGList)
       }
+
+      if (nrow(sepsetResults) > 0) {
+        if (nrow(certainSepsetResults) > 0) {
+          psSepsetResults <- powerSet(1:nrow(sepsetResults))  # keeps the empty set
+        } else {
+          psSepsetResults <- powerSet(1:nrow(sepsetResults))[-1]  # removes the empty set
+        }
+
+        if (verbose) {
+          print(paste0("Length of the powerSet of sepsetResults: ", length(psSepsetResults)))
+        }
+
+        sepsetResultsList <- future_lapply(psSepsetResults, checkSepsetResults,
+                                           sepsetResults, certainSepsetResults,
+                                           future.seed=TRUE)
+
+        sepsetResultsList <- sepsetResultsList[!sapply(sepsetResultsList, is.null)]
+      } else {
+        sepsetResultsList <- list(certainSepsetResults)
+      }
+
+      if (verbose) {
+        print(paste0("Length of sepsetResultsList: ", length(sepsetResultsList)))
+      }
+
+      toProcessPAGList <- future_lapply(sepsetResultsList, createToProcessPAGList,
+                                         curpag, sepset, ord,
+                                         future.seed=TRUE)
     }
+
     return(list(curpag=curpag,
                 toProcessPAGList=toProcessPAGList,
                 citestResults=citestResults))
@@ -434,8 +479,8 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     if (run_parallel) {
       # For each of the current ord's PAG, we generate
       # all possible combinations of new sepsets
-      toProcessPAGLists <- foreach (i = 1:length(todo_pag_list),
-           .options.future = list(seed = TRUE)) %dofuture% {
+      toProcessPAGLists <- foreach (i = seq_along(todo_pag_list),
+           .options.future = list(seed = TRUE, packages = c("stats"))) %dofuture% {
              curpag <- todo_pag_list[[i]]
              # updating mec of curpag to the current ord
              if (verbose)
@@ -448,11 +493,11 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
 
              getToProcessPAGList(
                curpag, ord, fixedEdges, alpha, skel_out$citestResults,
-               indepTest, suffStat, NAdelete, verbose > 1, allowNewTests)
+               indepTest, suffStat, NAdelete, verbose > 1, pH0Thresh, allowNewTests)
            }
     } else {
       toProcessPAGLists <- list()
-      for (i in 1:length(todo_pag_list))  {
+      for (i in seq_along(todo_pag_list))  {
         curpag <- todo_pag_list[[i]]
         # updating mec of curpag to the current ord
         if (verbose)
@@ -466,7 +511,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
 
         toProcessPAGLists[[i]] <- getToProcessPAGList(
                curpag, ord, fixedEdges, alpha, citestResults,
-               indepTest, suffStat, NAdelete, verbose > 1, allowNewTests)
+               indepTest, suffStat, NAdelete, verbose > 1, pH0Thresh, allowNewTests)
        }
     }
 
@@ -488,6 +533,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     if (verbose)
       cat("curord:", ord, "; length of toProcessPAGList: ", length(toProcessPAGList), "\n")
     if (length(toProcessPAGList) > list.max) {
+      cat("The maximum list size of", list.max, "has been exceeded.\n")
       cur_ord_pag_list <- prev_cur_ord_pag_list
       break
     }
@@ -502,14 +548,14 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                                        allowNewTests=allowNewTests, future.seed=TRUE)
         all_citestResults <- citestResults
         newProcessedPAGList <- list()
-        for (i in 1:length(out_processed)) {
+        for (i in seq_along(out_processed)) {
           newProcessedPAGList[[i]] <- out_processed[[i]]$potPAG
           all_citestResults <- rbind(all_citestResults, out_processed[[i]]$citestResults)
         }
       } else {
         all_citestResults <- citestResults
         newProcessedPAGList <- list()
-        for (i in 1:length(toProcessPAGList)) {
+        for (i in seq_along(toProcessPAGList)) {
           if (verbose)
             cat("Processing PAG", i, "/", length(toProcessPAGList), "\n")
           out_processed <- processPotPAG(toProcessPAGList[[i]], ord,
@@ -539,7 +585,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     }
 
     if (nrow(diff_citestResults[[as.character(ord)]]) == 0) {
-      for (i in seq_along(1:length(cur_ord_pag_list))) {
+      for (i in seq_along(cur_ord_pag_list)) {
         if (!cur_ord_pag_list[[i]]$violations) {
           cur_ord_pag_list[[i]]$scores <- list(global_score=c(1,1),
                                                mec_score=cur_ord_pag_list[[i]]$mec$mec_score)
@@ -649,7 +695,7 @@ rankPAGList <- function(pag_list, max_ord, scores_df=NULL,
 
   ord_scores_cols_list <- lapply(scores_df$cur_ord_global_scores, fromJSON)
   all_scores <- c()
-  for (i in 1:length(ord_scores_cols_list)) {
+  for (i in seq_along(ord_scores_cols_list)) {
     cur_ord_scores <- ord_scores_cols_list[[i]]
     ord_ints <- c()
     for (j in 0:(max_ord)) {
