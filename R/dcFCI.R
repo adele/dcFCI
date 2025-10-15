@@ -43,7 +43,7 @@ getOrdPotSepsets <- function(pagAdjM, ord, alpha, amec,
           pH1 <- citest_out$pH1
           citestResults <- citest_out$citestResults
 
-          if (pvalue > alpha || pH0 > 0.5) { # independent
+          if ((!is.na(pvalue) && pvalue > alpha) || (is.na(pH0) && pH0 > 0.5)) { # independent
             if (verbose) {
               cat(paste0("Adding ", getSepString(Si), " to potsepsets of ", x, " and ", y, "\n"))
             }
