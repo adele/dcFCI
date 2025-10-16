@@ -13,7 +13,7 @@ run_parallel = TRUE
 if (run_parallel) {
   require(doFuture)
   require(future.apply)
-  n_cores <- 12
+  n_cores <- 11
   #plan("multisession", workers = n_cores)
   plan("multicore", workers = n_cores) # forking
 }
@@ -94,7 +94,6 @@ labels <- vars_names
 p <- length(labels)
 fixedEdges <- matrix(rep(FALSE, p * p), nrow = p, ncol = p)
 fixedGaps = NULL
-NAdelete = FALSE
 alpha = 0.01
 verbose = TRUE
 
@@ -134,22 +133,28 @@ fci_metrics$shd
 
 sel_top = 1 # parameter k in the paper
 
-
-# alpha=0.05;
-# NAdelete = FALSE; m.max = Inf; fixedGaps = NULL; fixedEdges = NULL;
-# verbose = TRUE; sel_top = 1; prob_sel_top = 1;
-# run_parallel = TRUE; allowNewTests=TRUE;
-# list.max = 500; pH0Thresh=0.9
+#
+# alpha=0.05; m.max = Inf; fixedGaps = NULL; fixedEdges = NULL;
+# verbose = TRUE; sel_top = 1; prob_sel_top = FALSE;
+# run_parallel = TRUE; allowNewTests=FALSE;
+# list.max = 500; pH0Thresh=0.8; log_folder = "./"
 
 
 start_time <- Sys.time()
 fit_dcfci <- dcFCI(suffStat, indepTest, labels, alpha=0.05,
-                   NAdelete = FALSE, m.max = Inf, fixedGaps = NULL, fixedEdges = NULL,
-                   verbose = TRUE, sel_top = 1, prob_sel_top = 1,
+                   m.max = Inf, fixedGaps = NULL, fixedEdges = NULL,
+                   verbose = TRUE, sel_top = 1, prob_sel_top = FALSE,
                    run_parallel = TRUE, allowNewTests=TRUE,
-                   list.max = 500, pH0Thresh=1) # we can choose a pH0 threshold, e.g., 0.9
+                   list.max = 500, pH0Thresh=0.9) # we can choose a pH0 threshold, e.g., 0.9
 end_time <- Sys.time()
+
+
+################
+# Running time #
+################
 time_taken <- end_time - start_time
+cat("\n\n dcFCI runtime: ", time_taken, "\n\n")
+
 
 # MEC-targeted PAG scores in each iteration:
 fit_dcfci$top_scoresDF
@@ -165,6 +170,8 @@ dcfci_metrics <- getMetrics(true.amat.pag, dcfci_pag,
                           est.sepset=getPAGImpliedSepset(dcfci_pag),
                           dat=NULL,  # specify dat if BIC should be computed
                           conservative = FALSE)
+
+######################
 
 dcfci_sepset <- fit_dcfci$top_dcPAGs[[1]]$sepset
 formatSepset(dcfci_sepset)

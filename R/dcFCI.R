@@ -1,8 +1,7 @@
 getOrdPotSepsets <- function(pagAdjM, ord, alpha, amec,
                              fixedEdges, doneEdges, citestResults,
-                             indepTest, suffStat, NAdelete, verbose,
+                             indepTest, suffStat, verbose,
                              allowNewTests=TRUE) {
-  UnFaithful = S = NULL
   bestSepResults <- c()
 
   adjM <- pagAdjM > 0
@@ -10,9 +9,9 @@ getOrdPotSepsets <- function(pagAdjM, ord, alpha, amec,
   ind <- as.data.frame(which(lower.tri(adjM) & adjM, arr.ind = TRUE))
   rownames(ind) <- NULL
 
-  # iterates over all edges with both edgemarks not necessarily faithful and then
-  # edges including faithful edgemarks
+  # iterates over all edges
   remEdge_i <- 1
+  #TODO: make this more efficient / parallelize
   while (remEdge_i <= nrow(ind)) {
     curEdgeResults <- c()
     x <- as.numeric(ind[remEdge_i, 1])
@@ -33,33 +32,33 @@ getOrdPotSepsets <- function(pagAdjM, ord, alpha, amec,
       if (!is.null(potSeps)) {
         if (verbose)
           print(paste0("potSeps for x=", x, " y=", y, " ord=", ord, " is {",
-                     paste0(potSeps, collapse="; "), "}"))
+                       paste0(potSeps, collapse="; "), "}"))
 
         for (Si in potSeps) {
           citest_out <- getCITestResults(x, y, Si, citestResults, indepTest,
-                              suffStat, NAdelete, verbose, allowNewTests)
+                                         suffStat, verbose, allowNewTests)
           pvalue <- citest_out$pvalue
           pH0 <- citest_out$pH0
           pH1 <- citest_out$pH1
           citestResults <- citest_out$citestResults
 
-          if ((!is.na(pvalue) && pvalue > alpha) || (is.na(pH0) && pH0 > 0.5)) { # independent
+          if (is.na(pvalue) || pvalue > alpha || pH0 >= 0.5) { # PAGs with and without the edge will be considered
             if (verbose) {
               cat(paste0("Adding ", getSepString(Si), " to potsepsets of ", x, " and ", y, "\n"))
             }
 
             curEdgeResults <- rbind(curEdgeResults,
                                     data.frame("ord"= length(Si),
-                                                "X"=x, "Y"=y,
-                                                "S"=getSepString(Si),
-                                                "pvalue"=pvalue,
-                                                "pH0"=pH0,
-                                                "pH1"=pH1))
+                                               "X"=x, "Y"=y,
+                                               "S"=getSepString(Si),
+                                               "pvalue"=pvalue,
+                                               "pH0"=pH0,
+                                               "pH1"=pH1))
 
           }
         }
         bestSepResults <- rbind(bestSepResults,
-                                   curEdgeResults)
+                                curEdgeResults)
       } else {
         if (verbose)
           print(paste0("potSeps for x=", x, " y=", y, " ord=", ord, " is NULL"))
@@ -68,10 +67,11 @@ getOrdPotSepsets <- function(pagAdjM, ord, alpha, amec,
     remEdge_i <- remEdge_i + 1
   }
 
-  # We now sort using pvalue
+  # We now sort using pH0
   if (!is.null(bestSepResults) && nrow(bestSepResults) > 0) {
-    bestSepResults <- bestSepResults[order(bestSepResults$pvalue, decreasing = T),]
+    bestSepResults <- bestSepResults[order(bestSepResults$pH0, decreasing = T),]
   }
+
 
   return(list(sepsetResults=bestSepResults, citestResults=citestResults,
               doneEdges=doneEdges))
@@ -106,12 +106,12 @@ getOrdPotSepsetsXY <- function(x, y, ord, pagAdjM, verbose=FALSE) {
                                     definite = FALSE,
                                     type = "all", maxLength = curord+2,
                                     verbose=verbose)
-         potSeps <- potSeps[-potssid]
+        potSeps <- potSeps[-potssid]
 
         if (length(mconnpaths) == 0 && length(potSeps) == 0) {
           if (verbose) {
             cat(paste0("It is not possible to find a sepset for {", labels[x], ",", labels[y],
-             "} of order ", curord, " (<=", ord, ") or higher\n"))
+                       "} of order ", curord, " (<=", ord, ") or higher\n"))
           }
           done <- TRUE
           break
@@ -180,11 +180,11 @@ getPAGListScores <- function(pag_List, ord_global_score="global_score") {
 
 
 updateSkelScore <- function(apag, ord, citestResults, indepTest,
-                            suffStat, NAdelete, verbose,
+                            suffStat, verbose,
                             allowNewTests) {
   out_skel <- scoreSkel(apag$sepset, ord,
                         citestResults, indepTest,
-                        suffStat, NAdelete, verbose > 1,
+                        suffStat, verbose > 1,
                         allowNewTests=allowNewTests)
   apag$mec$skel_citests <- out_skel$skel_citests
   apag$mec$skel_score <- out_skel$skel_score
@@ -201,15 +201,20 @@ updateSkelScore <- function(apag, ord, citestResults, indepTest,
 }
 
 
-processPotPAG <- function(potPAG, ord, citestResults, indepTest, suffStat, NAdelete,
-                          verbose=FALSE, allowNewTests=TRUE) {
+processPotPAG <- function(id, toProcessPAGList, ord, citestResults, indepTest,
+                          suffStat, verbose=FALSE, allowNewTests=TRUE) {
+
+  futile.logger::flog.info(
+    paste("Started processing PAG", id, " / ", length(toProcessPAGList)), name = "dcfci_log")
+
+  potPAG <- toProcessPAGList[[id]]
   ######################
   # Applying FCI rules #
   ######################
   rules <- rep(TRUE, 10)
 
   pot_amat.pag <- pcalg::udag2pag(pag = potPAG$amat.pag, potPAG$sepset, rules = rules,
-                                unfVect = c(), verbose = verbose > 1, orientCollider = TRUE)
+                                  unfVect = c(), verbose = verbose > 1, orientCollider = TRUE)
   potPAG$amat.pag <- pot_amat.pag
 
 
@@ -227,7 +232,7 @@ processPotPAG <- function(potPAG, ord, citestResults, indepTest, suffStat, NAdel
       cat("Updating MEC of new candidate PAG...\n")
     out_mec <- getMEC(potPAG$amat.pag, ag.type="pag", scored=TRUE,
                       max.ord = ord, citestResults,
-                      indepTest, suffStat, NAdelete,
+                      indepTest, suffStat,
                       verbose=verbose > 1, allowNewTests=allowNewTests)
     potPAG$mec <- out_mec$mec
     citestResults <- out_mec$citestResults
@@ -236,21 +241,25 @@ processPotPAG <- function(potPAG, ord, citestResults, indepTest, suffStat, NAdel
   }
 
   potPAG$done <- TRUE
+  futile.logger::flog.info(
+    paste("Finished processing PAG", id, " / ", length(toProcessPAGList)), name = "dcfci_log")
+
 
   return(list(potPAG=potPAG, citestResults=citestResults))
 }
 
 
+#' @importFrom futile.logger flog.appender appender.file flog.info
 #' @importFrom rje powerSet
 #' @importFrom jsonlite fromJSON
 #' @importFrom future.apply future_lapply
 #' @importFrom pcalg udag2pag
 #' @export dcFCI
 dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
-                  NAdelete = FALSE, m.max = Inf, fixedGaps = NULL, fixedEdges = NULL,
+                  m.max = Inf, fixedGaps = NULL, fixedEdges = NULL,
                   verbose = TRUE, sel_top = 1, prob_sel_top = FALSE,
                   run_parallel = TRUE, allowNewTests=TRUE,
-                  list.max = 500, pH0Thresh=1) {
+                  list.max = 500, pH0Thresh=1, log_folder = "./") {
 
   score_type = "cur_diffs"
   ord_global_score = "global_score"
@@ -264,12 +273,10 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
   }
 
   getToProcessPAGList <- function(curpag, ord, fixedEdges, alpha, citestResults,
-                                  indepTest, suffStat, NAdelete, verbose,
-                                  pH0Thresh=1,
-                                  allowNewTests=TRUE) {
+                                  indepTest, suffStat, verbose=TRUE,
+                                  pH0Thresh=1, allowNewTests=TRUE) {
 
-
-    # for generating the sepsetResultsList
+    # inner function to generate the sepsetResultsList in parallel
     checkSepsetResults <- function(ids, sepsetResults, certainSepsetResults) {
       curSepsetResults <- sepsetResults[ids, ]
       if (length(unique(curSepsetResults[,c(2:3)])) < nrow(curSepsetResults)) {
@@ -279,7 +286,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
       return(rbind(certainSepsetResults, curSepsetResults))
     }
 
-    # for generating all potPAGs in parallel
+    # inner function to generate all potPAGs in parallel
     createToProcessPAGList <- function(curSepsetResults, curpag, sepset, ord) {
       # generate a PAG for a given curSepsetResults
       # (an element of the sepsetResults of the list
@@ -316,13 +323,26 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     doneEdges <- curpag$doneEdges
     sepset <- curpag$sepset
     amec <- curpag$amec
+
+    if (verbose) {
+      cat("Getting pot sepsets...\n")
+    }
     sepsetResultsOut <- getOrdPotSepsets(pagAdjM, ord, alpha, amec,
                                          fixedEdges, doneEdges, citestResults,
-                                         indepTest, suffStat, NAdelete, verbose,
+                                         indepTest, suffStat, verbose > 1,
                                          allowNewTests=allowNewTests)
 
     citestResults <- sepsetResultsOut$citestResults
     sepsetResults <- sepsetResultsOut$sepsetResults
+
+    if (verbose) {
+      if (!is.null(sepsetResults)) {
+        cat("Number of sepsets: ", nrow(sepsetResults), "...\n")
+      } else {
+        cat("Number of sepsets: ", 0, "...\n")
+      }
+    }
+
 
     # updating the input pag (i.e, curpag) in the output list.
     curpag$doneEdges <- sepsetResultsOut$doneEdges
@@ -340,7 +360,6 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     sepsetResultsList <- list()
     if (!is.null(sepsetResults) && nrow(sepsetResults) > 0) {
 
-
       # generate all curSepsetResults first in parallel
       certainSepsetResults <- subset(sepsetResults, pH0 >= pH0Thresh)
       # if more than one minimal separator is certain, we just get one of them ...
@@ -348,7 +367,6 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
       # TODO: this may lead to violations -- should we not consider pairs
       # with more than one "certain" minimal separator as certain?
       certainPairs <- unique(certainSepsetResults[,c(2:3)])
-
 
       # separated pairs from 'certainPairs' should be removed, regardless of the minimal sep
       for (pair_row in 1:nrow(certainPairs)) {
@@ -360,6 +378,15 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
       }
 
       if (nrow(sepsetResults) > 0) {
+        if (verbose) {
+          cat(paste0("Number of uncertain sepsets: ", nrow(sepsetResults), "\n"))
+          if (nrow(sepsetResults) > 20) {
+            cat("ERROR: Unable to proceed due to excessive uncertainty in independence test results.\n\n")
+            print(sepsetResults)
+            return(NULL)
+          }
+        }
+
         if (nrow(certainSepsetResults) > 0) {
           psSepsetResults <- powerSet(1:nrow(sepsetResults))  # keeps the empty set
         } else {
@@ -367,7 +394,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
         }
 
         if (verbose) {
-          print(paste0("Length of the powerSet of sepsetResults: ", length(psSepsetResults)))
+          cat(paste0("Length of the powerSet of sepsetResults: ", length(psSepsetResults), "\n"))
         }
 
         sepsetResultsList <- future_lapply(psSepsetResults, checkSepsetResults,
@@ -380,14 +407,12 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
       }
 
       if (verbose) {
-        print(paste0("Length of sepsetResultsList: ", length(sepsetResultsList)))
+        cat(paste0("Length of sepsetResultsList: ", length(sepsetResultsList), "\n\n"))
       }
 
       toProcessPAGList <- future_lapply(sepsetResultsList, createToProcessPAGList,
-                                         curpag, sepset, ord,
-                                         future.seed=TRUE)
+                                        curpag, sepset, ord, future.seed=TRUE)
     }
-
     return(list(curpag=curpag,
                 toProcessPAGList=toProcessPAGList,
                 citestResults=citestResults))
@@ -439,7 +464,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     cat("Starting with a complete PAG...\n")
   }
   mec_out <- getMEC(adjM * 1, ag.type="pag", scored=TRUE, max.ord = NA,
-                    citestResults, indepTest, suffStat, NAdelete,
+                    citestResults, indepTest, suffStat,
                     verbose=verbose > 1, allowNewTests=allowNewTests)
   citestResults <- mec_out$citestResults
 
@@ -458,12 +483,24 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
   ord <- 0
   diff_citestResults <- list() # symmetric difference of citests for all candidate PAGs
 
+  #library(futile.logger)
+
+  # Set up logging to file
+  futile.logger::flog.appender(futile.logger::appender.file(
+    paste0(log_folder, "dcfci_log", format(Sys.time(), '%Y%m%d_%H%M%S%OS.3'), ".txt")),
+    name = "dcfci_log")
+  futile.logger::flog.info(paste("Initializing..."), name = "dcfci_log")
+
   #system.time({
   while (ord <= min(m.max, p-2)) {
+
     prev_cur_ord_pag_list <- cur_ord_pag_list
 
-    todo_pag_ids <- which(sapply(cur_ord_pag_list, function(x) {
+    todo_pag_ids <- c()
+    if (length(cur_ord_pag_list) > 0) {
+      todo_pag_ids <- which(sapply(cur_ord_pag_list, function(x) {
         any(!x[["doneEdges"]])}))
+    }
 
     if (length(todo_pag_ids) == 0 || length(todo_pag_ids) >= list.max) {
       break
@@ -476,64 +513,64 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     if (verbose)
       cat("length of todo_pag_list in ord=: ", ord, ": ", length(todo_pag_list), "\n")
 
-    if (run_parallel) {
-      # For each of the current ord's PAG, we generate
-      # all possible combinations of new sepsets
-      toProcessPAGLists <- foreach (i = seq_along(todo_pag_list),
-           .options.future = list(seed = TRUE, packages = c("stats"))) %dofuture% {
-             curpag <- todo_pag_list[[i]]
-             # updating mec of curpag to the current ord
-             if (verbose)
-               cat("Updating MEC skel of previous best candidate PAG", i, "to ord", ord, "...\n")
+    toProcessPAGLists <- list()
+    has_errors <- FALSE
+    for (i in seq_along(todo_pag_list))  {
+      curpag <- todo_pag_list[[i]]
+      # updating mec of curpag to the current ord
+      if (verbose)
+        cat("Updating MEC skel of previous best candidate PAG", i, "/",
+            length(todo_pag_list), " to ord", ord, "...\n")
 
-             skel_out <- updateSkelScore(curpag, ord, citestResults, indepTest,
-                             suffStat, NAdelete, verbose > 1,
-                             allowNewTests)
-             curpag <- skel_out$apag
+      skel_out <- updateSkelScore(curpag, ord, citestResults, indepTest,
+                                  suffStat, verbose > 1, allowNewTests)
+      curpag <- skel_out$apag
+      citestResults <- skel_out$citestResults
 
-             getToProcessPAGList(
-               curpag, ord, fixedEdges, alpha, skel_out$citestResults,
-               indepTest, suffStat, NAdelete, verbose > 1, pH0Thresh, allowNewTests)
-           }
-    } else {
-      toProcessPAGLists <- list()
-      for (i in seq_along(todo_pag_list))  {
-        curpag <- todo_pag_list[[i]]
-        # updating mec of curpag to the current ord
-        if (verbose)
-          cat("Updating MEC skel of previous best candidate PAG", i, "to ord", ord, "...\n")
 
-        skel_out <- updateSkelScore(curpag, ord, citestResults, indepTest,
-                                    suffStat, NAdelete, verbose > 1,
-                                    allowNewTests)
-        curpag <- skel_out$apag
-        citestResults <- skel_out$citestResults
+      if (verbose)
+        cat("Getting corresponding list of PAGs to process", i, "/",
+            length(todo_pag_list), "...\n")
 
-        toProcessPAGLists[[i]] <- getToProcessPAGList(
-               curpag, ord, fixedEdges, alpha, citestResults,
-               indepTest, suffStat, NAdelete, verbose > 1, pH0Thresh, allowNewTests)
-       }
+      # this will potentially run in parallel, so the outer loop
+      # cannot run in parallel as well.
+      outList <- getToProcessPAGList(
+        curpag, ord, fixedEdges, alpha, citestResults,
+        indepTest, suffStat, verbose > 1, pH0Thresh, allowNewTests)
+
+      if (!is.null(outList)) {
+        toProcessPAGLists[[i]] <- outList
+      } else {
+        has_errors <- TRUE
+        toProcessPAGLists <- NULL
+        break
+      }
     }
-
-
 
     toProcessPAGList <- list()
-    all_citestResults <- citestResults
-    for (outList in toProcessPAGLists) {
-      toProcessPAGList <- c(toProcessPAGList,
-                            outList$toProcessPAGList)
-      cur_ord_pag_list[[length(cur_ord_pag_list)+1]] <- outList$curpag
-      all_citestResults <- rbind(all_citestResults, outList$citestResults)
+    if (!has_errors) {
+      all_citestResults <- citestResults
+      for (outList in toProcessPAGLists) {
+        toProcessPAGList <- c(toProcessPAGList,
+                              outList$toProcessPAGList)
+        cur_ord_pag_list[[length(cur_ord_pag_list)+1]] <- outList$curpag
+        all_citestResults <- rbind(all_citestResults, outList$citestResults)
+      }
+      # tests from previous order plus those to find separators at the current order.
+      citestResults <- all_citestResults[!duplicated(all_citestResults[,1:4]),]
+
+      toProcessPAGList <- getUniquePAGList(toProcessPAGList, key="sepset")$pag_List
+
+      if (verbose)
+        cat("curord:", ord, "; length of toProcessPAGList: ", length(toProcessPAGList), "\n")
+      if (length(toProcessPAGList) > list.max) {
+        cat("ERROR: The maximum list size of", list.max, "has been exceeded.\n")
+        has_errors <- TRUE
+      }
     }
-    # tests from previous order plus those to find separators at the current order.
-    citestResults <- all_citestResults[!duplicated(all_citestResults[,1:4]),]
 
-    toProcessPAGList <- getUniquePAGList(toProcessPAGList, key="sepset")$pag_List
-
-    if (verbose)
-      cat("curord:", ord, "; length of toProcessPAGList: ", length(toProcessPAGList), "\n")
-    if (length(toProcessPAGList) > list.max) {
-      cat("The maximum list size of", list.max, "has been exceeded.\n")
+    if (has_errors) {
+      toProcessPAGList <- NULL
       cur_ord_pag_list <- prev_cur_ord_pag_list
       break
     }
@@ -542,10 +579,13 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
       if (run_parallel) {
         # Process each PAG by applying the rules of the FCI, checking for
         # violations, and computing the scored MEC
-        out_processed <- future_lapply(toProcessPAGList, processPotPAG,
+        out_processed <- future_lapply(1:length(toProcessPAGList),
+                                       processPotPAG, toProcessPAGList,
                                        ord, citestResults, indepTest, suffStat,
-                                       NAdelete, verbose=verbose > 1,
+                                       verbose=verbose > 1,
                                        allowNewTests=allowNewTests, future.seed=TRUE)
+
+        # Updating used citestResults and newProcessedPAGList
         all_citestResults <- citestResults
         newProcessedPAGList <- list()
         for (i in seq_along(out_processed)) {
@@ -558,9 +598,9 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
         for (i in seq_along(toProcessPAGList)) {
           if (verbose)
             cat("Processing PAG", i, "/", length(toProcessPAGList), "\n")
-          out_processed <- processPotPAG(toProcessPAGList[[i]], ord,
+          out_processed <- processPotPAG(i, toProcessPAGList, ord,
                                          citestResults, indepTest,
-                                         suffStat, NAdelete, verbose=verbose > 1,
+                                         suffStat, verbose=verbose > 1,
                                          allowNewTests=allowNewTests)
           all_citestResults <- rbind(all_citestResults, out_processed$citestResults)
           newProcessedPAGList[[i]] <- out_processed$potPAG
@@ -602,7 +642,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     global_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
                                    score_name = "global_score")
     mec_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
-                                   score_name = "mec_score")
+                                score_name = "mec_score")
 
     cur_ret <- list(cur_ord_pag_list=cur_ord_pag_list,
                     pag_List=pag_List,
@@ -633,7 +673,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
   mec_score_df <- rankPAGList(pag_List, max_ord =  ord-1, score_name = "mec_score")
   top_dc_pag_ids_out <- getTopPagIds(global_score_df, mec_score_df, ord-1, sel_top, prob_sel_top)
   if (!(length(top_dc_pag_ids_out$top_global_pags_ids) == length(top_dc_pag_ids_out$top_mec_pags_ids) &&
-      all(top_dc_pag_ids_out$top_global_pags_ids %in% top_dc_pag_ids_out$top_mec_pags_ids))) {
+        all(top_dc_pag_ids_out$top_global_pags_ids %in% top_dc_pag_ids_out$top_mec_pags_ids))) {
     top_dc_pag_ids <- top_dc_pag_ids_out$top_global_pags_ids
     output_top_score <- "global_score"
   } else {
@@ -650,12 +690,14 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
   mec_score_df$pag_list_id <- 1:length(pag_List)
 
   if (prob_sel_top) {
-    top_dcPAGs <- pag_List[which(global_score_df$prob_index == 1)]
-    top_scoresDF <- subset(global_score_df, prob_index == 1)
+    top_ids <- which(global_score_df$prob_index <= prob_sel_top & global_score_df$violations == FALSE &
+                       global_score_df$duplicated == FALSE)
   } else {
-    top_dcPAGs <- pag_List[which(global_score_df$index == 1)]
-    top_scoresDF <- subset(global_score_df, index == 1)
+    top_ids <- which(global_score_df$index <= sel_top & global_score_df$violations == FALSE &
+                       global_score_df$duplicated == FALSE)
   }
+  top_dcPAGs <- pag_List[top_ids]
+  top_scoresDF <- global_score_df[top_ids,]
 
   return(list(top_dcPAGs=top_dcPAGs, # PAGs ranked as 1st
               top_scoresDF=top_scoresDF, #scores of top_dcPAGs
@@ -773,7 +815,7 @@ getUniquePAGList <- function(pag_List, key="sepset") {
       ret <- x$sepsetResults
       rownames(ret) <- NULL
       ret
-      })
+    })
     unique_ids <- which(!duplicated(sepsetResultsList))
   } else {
     amatList <- lapply(pag_List, function(x) {

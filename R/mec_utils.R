@@ -5,7 +5,7 @@
 #' @export getMEC
 getMEC <- function(amat.ag, ag.type="pag", scored=FALSE, max.ord=NA,
                    citestResults=NULL, indepTest=NULL, suffStat=NULL,
-                   NAdelete=FALSE, verbose=FALSE, allowNewTests=TRUE) {
+                   verbose=FALSE, allowNewTests=TRUE) {
 
   if (!isValidPAG(amat.ag)) {
     return(NULL)
@@ -39,7 +39,7 @@ getMEC <- function(amat.ag, ag.type="pag", scored=FALSE, max.ord=NA,
       }
     }
     scores_out <- scoreMEC(mec, sepset, max.ord, citestResults, indepTest,
-                               suffStat, NAdelete, verbose, allowNewTests)
+                           suffStat, verbose, allowNewTests)
     citestResults <- scores_out$citestResults
     mec <- scores_out$scored_mec
   }

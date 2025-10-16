@@ -15,11 +15,11 @@ getMECFaithfulnessScores <- function(apag, suffStat,
     mec_indep_pvalues <- subset(mec_ci, type == "indep")$pvalue
 
     faithf_mec_dep_counts <- c(colSums( matrix(unlist(
-      lapply(alphas, function(x) { mec_dep_pvalues < x})), ncol = 2, byrow=FALSE)),
+      lapply(alphas, function(x) { mec_dep_pvalues < x})), ncol = 2, byrow=FALSE), na.rm=TRUE),
       length(mec_dep_pvalues))
 
     faithf_mec_indep_counts <- c(colSums( matrix(unlist(
-      lapply(alphas, function(x) { mec_indep_pvalues > x})), ncol = 2, byrow=FALSE)),
+      lapply(alphas, function(x) { mec_indep_pvalues > x})), ncol = 2, byrow=FALSE), na.rm=TRUE),
       length(mec_indep_pvalues))
 
     mec_score <- getProbConjunction(mec_faithfulness$probs)
@@ -50,11 +50,11 @@ getFaithfulnessScores <- function(apag, suffStat,
   dep_pvalues <- subset(faithfulnessDegree$f_citestResults, type == "dep")$pvalue
   indep_pvalues <- subset(faithfulnessDegree$f_citestResults, type == "indep")$pvalue
   faithf_dep_counts <- c(colSums( matrix(unlist(
-    lapply(alphas, function(x) { dep_pvalues < x})), ncol = 2, byrow=FALSE)),
+    lapply(alphas, function(x) { dep_pvalues < x})), ncol = 2, byrow=FALSE), na.rm=TRUE),
     length(dep_pvalues))
 
   faithf_indep_counts <- c(colSums( matrix(unlist(
-    lapply(alphas, function(x) { indep_pvalues > x})), ncol = 2, byrow=FALSE)),
+    lapply(alphas, function(x) { indep_pvalues > x})), ncol = 2, byrow=FALSE), na.rm=TRUE),
     length(indep_pvalues))
 
   # this tests the agreement with the adj-required citest results
@@ -67,7 +67,7 @@ getFaithfulnessScores <- function(apag, suffStat,
     adj_dep_pvalues <- subset(adj_ci, type == "dep")$pvalue
 
     faithf_adj_dep_counts <- c(colSums( matrix(unlist(
-      lapply(alphas, function(x) { adj_dep_pvalues < x})), ncol = 2, byrow=FALSE)),
+      lapply(alphas, function(x) { adj_dep_pvalues < x})), ncol = 2, byrow=FALSE), na.rm=TRUE),
       length(adj_dep_pvalues))
 
     adj_score <- getProbConjunction(c(
@@ -84,11 +84,11 @@ getFaithfulnessScores <- function(apag, suffStat,
     skel_indep_pvalues <- subset(skel_ci, type == "indep")$pvalue
 
     faithf_skel_dep_counts <- c(colSums( matrix(unlist(
-      lapply(alphas, function(x) { skel_dep_pvalues < x})), ncol = 2, byrow=FALSE)),
+      lapply(alphas, function(x) { skel_dep_pvalues < x})), ncol = 2, byrow=FALSE), na.rm=TRUE),
       length(skel_dep_pvalues))
 
     faithf_skel_indep_counts <- c(colSums( matrix(unlist(
-      lapply(alphas, function(x) { skel_indep_pvalues > x})), ncol = 2, byrow=FALSE)),
+      lapply(alphas, function(x) { skel_indep_pvalues > x})), ncol = 2, byrow=FALSE), na.rm=TRUE),
       length(skel_indep_pvalues))
 
     skel_score <- getProbConjunction(c(

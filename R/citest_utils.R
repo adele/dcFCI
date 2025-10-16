@@ -1,4 +1,4 @@
-getCITestResultsHelper <- function(x, y, Sxy, citestResults, NAdelete=FALSE) {
+getCITestResultsHelper <- function(x, y, Sxy, citestResults) {
   X = Y = S = NULL
 
   SxyStr <- getSepString(sort(Sxy))
@@ -11,17 +11,10 @@ getCITestResultsHelper <- function(x, y, Sxy, citestResults, NAdelete=FALSE) {
     pvalueXY.S <- resultsxys[1, "pvalue"]
     pH0XY.S <- resultsxys[1, "pH0"]
     pH1XY.S <- resultsxys[1, "pH1"]
-  }
 
-  if (is.na(pvalueXY.S) || is.na(pH1XY.S) || is.na(pH0XY.S)) {
-    if (!NAdelete) {
-      pvalueXY.S <- 0
-      pH0XY.S <- 0
-      pH1XY.S <- 1
-    } else {
-      pvalueXY.S <- 1
-      pH0XY.S <- 1
-      pH1XY.S <- 0
+    if (is.na(pvalueXY.S) || is.na(pH1XY.S) || is.na(pH0XY.S)) {
+        pH0XY.S <- 0.5
+        pH1XY.S <- 0.5
     }
   }
 
@@ -39,13 +32,13 @@ getCITestResultsHelper <- function(x, y, Sxy, citestResults, NAdelete=FALSE) {
 #' @importFrom FCI.Utils getSepString
 #' @export getCITestResults
 getCITestResults <- function(x, y, Sxy, citestResults, indepTest, suffStat,
-                             NAdelete, verbose=FALSE, allowNewTests=TRUE) {
+                             verbose=FALSE, allowNewTests=TRUE) {
   pvalue = pH0 = pH1 = NULL
 
   sortedxy <- sort(c(x,y))
   x <- sortedxy[1]
   y <- sortedxy[2]
-  out <- getCITestResultsHelper(x, y, Sxy, citestResults, NAdelete)
+  out <- getCITestResultsHelper(x, y, Sxy, citestResults)
   SxyStr <- getSepString(sort(Sxy))
   curResults <-  data.frame("ord"= length(Sxy),
                             "X"=x, "Y"=y,
@@ -57,7 +50,7 @@ getCITestResults <- function(x, y, Sxy, citestResults, indepTest, suffStat,
     pH1 = out$pH1XY.S
   } else if (!is.null(suffStat$citestResults)) {
     # getting results from suffStat$citestResults if it is provided.
-    out <- getCITestResultsHelper(x, y, Sxy, suffStat$citestResults, NAdelete)
+    out <- getCITestResultsHelper(x, y, Sxy, suffStat$citestResults)
     if (!is.null(out)) {
       pvalue = out$pvalueXY.S
       pH0 = out$pH0XY.S
@@ -74,15 +67,18 @@ getCITestResults <- function(x, y, Sxy, citestResults, indepTest, suffStat,
 
       testXY.S <- indepTest(x, y, Sxy, suffStat)
       pvalue <- testXY.S
-      if (is.na(pvalue))
-        pvalue <- as.numeric(NAdelete)
-
       if (is.null(suffStat$n)) {
         stop("Please provide the sample size \'n\' in the suffStat list.")
       }
-      probsXY.S <- pvalue2probs(pvalue, n=suffStat$n)
-      pH0 <- probsXY.S$pH0
-      pH1 <- probsXY.S$pH1
+
+      if (!is.na(pvalue)) {
+        probsXY.S <- pvalue2probs(pvalue, n=suffStat$n)
+        pH0 <- probsXY.S$pH0
+        pH1 <- probsXY.S$pH1
+      } else {
+        pH0 <- 0.5
+        pH1 <- 0.5
+      }
 
       curResults <- cbind(curResults, "pvalue"=pvalue,
                         "pH0"=pH0, "pH1"=pH1)

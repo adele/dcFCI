@@ -383,14 +383,14 @@ scorePAGFromCITests <- function(amat.pag, ord=Inf, citestResults, verbose=FALSE)
 
 #' @export getSxyIndepScore
 getSxyIndepScore <- function(x, y, Sxy_list, labels,
-                             citestResults, indepTest, suffStat, NAdelete,
+                             citestResults, indepTest, suffStat,
                              test_only_max=FALSE, # similar to OR / disjunction
                              verbose=FALSE, allowNewTests=TRUE) {
   # getting separation scores
   indep_pH0s <- c()
   for (Sxy in Sxy_list) {
     citest_out <- getCITestResults(x, y, Sxy, citestResults, indepTest,
-                                   suffStat, NAdelete, verbose, allowNewTests)
+                                   suffStat, verbose, allowNewTests)
     citestResults <- citest_out$citestResults
     indep_pH0s <- c(indep_pH0s, citest_out$pH0)
   }
@@ -414,8 +414,7 @@ getSxyIndepScore <- function(x, y, Sxy_list, labels,
 
 #' @export getSxyMinimalityScore
 getSxyMinimalityScore <- function(x, y, Sxy_list, labels, citestResults,
-                                  indepTest, suffStat, NAdelete,
-                                  verbose=FALSE) {
+                                  indepTest, suffStat, verbose=FALSE) {
   min_score <- c(1, 1)
 
   resultsxy <- subset(citestResults, X == x & Y == y)
@@ -445,8 +444,8 @@ getSxyMinimalityScore <- function(x, y, Sxy_list, labels, citestResults,
 
 #' @importFrom jsonlite toJSON
 addTripletListScores <- function(tripletList, sepset, labels, citestResults,
-                                 indepTest, suffStat, NAdelete,
-                                 digits=10, verbose=FALSE, allowNewTests=TRUE) {
+                                 indepTest, suffStat, digits=10, verbose=FALSE,
+                                 allowNewTests=TRUE) {
   dep_citests <- data.frame()
   if (!is.null(tripletList)) {
     for (i in 1:nrow(tripletList)) {
@@ -465,7 +464,7 @@ addTripletListScores <- function(tripletList, sepset, labels, citestResults,
       }
       tripletList[i, "SepX0Y0"] <- toJSON(lapply(SepX0Y0, getSepString))
       indep_stats_out <- getSxyIndepScore(x0, y0, SepX0Y0, labels, citestResults,
-                                          indepTest, suffStat, NAdelete, verbose)
+                                          indepTest, suffStat, verbose)
       citestResults <- indep_stats_out$citestResults
 
       # can be a list of the pH0 associated to each minimal sepset Sxy
@@ -487,7 +486,7 @@ addTripletListScores <- function(tripletList, sepset, labels, citestResults,
       npaths <- tripletList[i, "nconnpaths"]
 
       citest_out <- getCITestResults(x0, y0, Sdep, citestResults, indepTest,
-                                     suffStat, NAdelete, verbose, allowNewTests)
+                                     suffStat, verbose, allowNewTests)
       citestResults <- citest_out$citestResults
       tripletList[i, "dep_pH0"] <- citest_out$pH0 # only one numeric value
       dep_score_int <- getDepScore(h1_probs = citest_out$pH1, ret_int=TRUE)
@@ -511,8 +510,7 @@ addTripletListScores <- function(tripletList, sepset, labels, citestResults,
 
 # This corresponds to the score for all adjacency tests
 scoreSkel <- function(sepset, ord, citestResults, indepTest,
-                      suffStat, NAdelete, verbose,
-                      allowNewTests=TRUE) {
+                      suffStat, verbose, allowNewTests=TRUE) {
   nvars <- length(sepset)
   tested_ci <- data.frame()
   for (i in 1:(nvars-1)) {
@@ -527,7 +525,7 @@ scoreSkel <- function(sepset, ord, citestResults, indepTest,
 
         for (Sxy in Sxy_list) {
           cur_citest_out <- getCITestResults(i, j, Sxy, citestResults, indepTest,
-                                             suffStat, NAdelete, verbose)
+                                             suffStat, verbose)
           # adding current test to citestResults
           citestResults <- cur_citest_out$citestResults
           cur_ciinfo <- subset(citestResults,  X == i & Y == j & S == getSepString(Sxy))
@@ -544,7 +542,7 @@ scoreSkel <- function(sepset, ord, citestResults, indepTest,
         for (Sxy in Sxy_list) {
           # adding ci info associated to the minimal independence
           cur_citest_out <- getCITestResults(i, j, Sxy, citestResults, indepTest,
-                                             suffStat, NAdelete, verbose)
+                                             suffStat, verbose)
           # adding current test to citestResults
           citestResults <- cur_citest_out$citestResults
           cur_ciinfo <- subset(citestResults,  X == i & Y == j & S == getSepString(Sxy))
@@ -557,7 +555,7 @@ scoreSkel <- function(sepset, ord, citestResults, indepTest,
           pSxy_list <- getSubsets(aset=Sxy, only_proper = TRUE)
           for (pSxy in pSxy_list) {
             cur_citest_out <- getCITestResults(i, j, pSxy, citestResults, indepTest,
-                                               suffStat, NAdelete, verbose)
+                                               suffStat, verbose)
             # adding current test to citestResults
             citestResults <- cur_citest_out$citestResults
             cur_ciinfo <- subset(citestResults,  X == i & Y == j & S == getSepString(pSxy))
@@ -583,14 +581,12 @@ scoreSkel <- function(sepset, ord, citestResults, indepTest,
 
 #' @export scoreMEC
 scoreMEC <- function(mec, sepset, max.ord, citestResults, indepTest,
-                     suffStat, NAdelete, verbose,
-                     allowNewTests=TRUE) {
+                     suffStat, verbose, allowNewTests=TRUE) {
   scored_mec <- mec
   labels <- colnames(mec$skel)
 
   out_skel <- scoreSkel(sepset, max.ord, citestResults, indepTest,
-                        suffStat, NAdelete, verbose,
-                        allowNewTests=allowNewTests)
+                        suffStat, verbose, allowNewTests=allowNewTests)
   scored_mec$skel_citests <- out_skel$skel_citests
   scored_mec$skel_score <- out_skel$skel_score
   citestResults <- out_skel$citestResults
@@ -598,7 +594,7 @@ scoreMEC <- function(mec, sepset, max.ord, citestResults, indepTest,
   scored_mec$ck_dep_citests <- c()
   if (!is.null(scored_mec$CK)) {
     out_ck <- addTripletListScores(scored_mec$CK, sepset, labels, citestResults,
-                                   indepTest, suffStat, NAdelete,
+                                   indepTest, suffStat,
                                    verbose=verbose, allowNewTests=allowNewTests)
     out_ck$dep_citests[, "structure"] <- "ck"
     citestResults <- out_ck$citestResults
@@ -609,7 +605,7 @@ scoreMEC <- function(mec, sepset, max.ord, citestResults, indepTest,
   scored_mec$nck_dep_citests <- c()
   if (!is.null(scored_mec$NCK)) {
     out_nck <- addTripletListScores(scored_mec$NCK, sepset, labels, citestResults,
-                                    indepTest, suffStat, NAdelete,
+                                    indepTest, suffStat,
                                     verbose=verbose, allowNewTests=allowNewTests)
     out_nck$dep_citests[, "structure"] <- "nck"
     scored_mec$NCK <- out_nck$tripletList
