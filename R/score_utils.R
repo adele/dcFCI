@@ -313,9 +313,9 @@ getSymmDiffCITestResults <- function(cur_ord_pag_list, ord,
     cur_ord_pag_list[[i]]$ordPAGs[[as.character(ord)]] <- cur_ord_pag_list[[i]]
   }
 
-  lapply(cur_ord_pag_list, function(x) { x$scores })
+  #lapply(cur_ord_pag_list, function(x) { x$scores })
 
-  lapply(cur_ord_pag_list, function(x) { x$sepsetResults })
+  #lapply(cur_ord_pag_list, function(x) { x$sepsetResults })
 
     return(list(cur_ord_pag_list=cur_ord_pag_list,
               symmDiffCITests=symmDiffCITests))
