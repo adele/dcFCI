@@ -72,7 +72,47 @@ getBIC <- function(amat.pag, dat, gaussian_vars=NULL, group_var=NULL,
   }
 }
 
+#' @export getStraightforwardPAGScore
+getStraightforwardPAGScore <- function(apag, citestResults, m.max = Inf) {
+  if (is.null(citestResults)) {
+    cat("Error: citestResults must contain all required CI test results.\n")
+    return(NULL)
+  }
 
+  na_ids <- which(is.na(citestResults$pvalue))
+  if (length(na_ids) > 0) {
+    if (length(na_ids) > 0) {
+      citestResults$pvalue[na_ids] <- NA
+      citestResults$pH0[na_ids] <- 0.5
+      citestResults$pH1[na_ids] <- 0.5
+    }
+  }
+
+  faithf <- getFaithfulnessDegree(apag, citestResults)
+  indep_tests <- subset(faithf$f_citestResults, type == "indep")
+  if (!is.infinite(m.max)) {
+    indep_tests <- subset(faithf$f_citestResults, type == "indep" & ord <= m.max+1)
+  }
+  indep_probs <- indep_tests$pH0
+  min_indep_test <- indep_tests[which.min(indep_probs),]
+
+  dep_tests <- subset(faithf$f_citestResults, type == "dep")
+  if (!is.infinite(m.max)) {
+    dep_tests <- subset(faithf$f_citestResults, type == "dep" & ord <= m.max+1)
+  }
+  dep_probs <- dep_tests$pH1
+  min_dep_test <- dep_tests[which.min(dep_probs),]
+
+  score <- dcFCI::getProbConjunction(c(indep_probs, dep_probs))
+
+  return(list(score=score,
+              min_indep_test = min_indep_test,
+              min_dep_test = min_dep_test,
+              indep_tests = indep_tests,
+              false_indep_tests = subset(indep_tests, bf==FALSE),
+              dep_tests = dep_tests,
+              false_dep_tests = subset(dep_tests, bf==FALSE)))
+}
 
 #' @export getProbConjunctionFromIntervals
 getProbConjunctionFromIntervals <- function(prob_intervals) {
@@ -290,7 +330,7 @@ getSymmDiffCITestResults <- function(cur_ord_pag_list, ord,
     cur_diff_citestResults <- diff_citestResults_list[[i]]
     cur_ord_pag_list[[i]]$diff_ord_citestResults <- cur_diff_citestResults
     cur_ord_pag_list[[i]]$curord <- ord
-    cur_ord_pag_list[[i]]$scores <- list(global_score=c(0,0),
+    cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=c(0,0),
                                          mec_score=c(0,0))
     if (i %in% valid_pags_ids) {
       if (!is.null(cur_diff_citestResults) &&
@@ -303,10 +343,10 @@ getSymmDiffCITestResults <- function(cur_ord_pag_list, ord,
 
         diff_citests_score <-
           getProbConjunction(c(dep_probs, indep_probs, unk_probs))
-        cur_ord_pag_list[[i]]$scores <- list(global_score=diff_citests_score,
+        cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=diff_citests_score,
                                              mec_score=cur_ord_pag_list[[i]]$mec$mec_score)
       } else {
-        cur_ord_pag_list[[i]]$scores <- list(global_score=c(1,1),
+        cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=c(1,1),
                                              mec_score=cur_ord_pag_list[[i]]$mec$mec_score)
       }
     }
@@ -322,15 +362,15 @@ getSymmDiffCITestResults <- function(cur_ord_pag_list, ord,
 }
 
 
-getTopPagIds <- function(global_score_df, mec_score_df=NULL,
+getTopPagIds <- function(ord_symm_diff_score_df, mec_score_df=NULL,
                          ord, sel_top, prob_sel_top) {
   top_mec_pag_ids <- NULL
   if (!prob_sel_top) {
-    top_global_pag_ids <- global_score_df[
-      which(global_score_df$violation == FALSE &
-              global_score_df[, paste0("ord", ord, "_score_up")] > 0 &
-              global_score_df$index <= sel_top &
-              global_score_df$prob_index <= 1), "pag_list_id"]
+    top_symm_diff_pag_ids <- ord_symm_diff_score_df[
+      which(ord_symm_diff_score_df$violation == FALSE &
+              ord_symm_diff_score_df[, paste0("ord", ord, "_score_up")] > 0 &
+              ord_symm_diff_score_df$index <= sel_top &
+              ord_symm_diff_score_df$prob_index <= 1), "pag_list_id"]
 
     if (!is.null(mec_score_df)) {
       top_mec_pag_ids <- mec_score_df[
@@ -340,10 +380,10 @@ getTopPagIds <- function(global_score_df, mec_score_df=NULL,
                 mec_score_df$prob_index <= 1), "pag_list_id"]
     }
   } else if (prob_sel_top >= 1)  {
-    top_global_pag_ids <- global_score_df[
-      which(global_score_df$violation == FALSE &
-              global_score_df[, paste0("ord", ord, "_score_up")] > 0 &
-              global_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
+    top_symm_diff_pag_ids <- ord_symm_diff_score_df[
+      which(ord_symm_diff_score_df$violation == FALSE &
+              ord_symm_diff_score_df[, paste0("ord", ord, "_score_up")] > 0 &
+              ord_symm_diff_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
 
     if (!is.null(mec_score_df)) {
       top_mec_pag_ids <- mec_score_df[
@@ -357,16 +397,16 @@ getTopPagIds <- function(global_score_df, mec_score_df=NULL,
 
   if (length(top_mec_pag_ids) > 0) {
     # there are mecs with pretty high probs!
-    top_dc_pag_ids <- intersect(top_global_pag_ids, top_mec_pag_ids)
+    top_dc_pag_ids <- intersect(top_symm_diff_pag_ids, top_mec_pag_ids)
     if (length(top_dc_pag_ids) == 0) {
-      top_dc_pag_ids = unique(c(top_mec_pag_ids, top_global_pag_ids))
+      top_dc_pag_ids = unique(c(top_mec_pag_ids, top_symm_diff_pag_ids))
     }
   } else {
-    top_dc_pag_ids = top_global_pag_ids
+    top_dc_pag_ids = top_symm_diff_pag_ids
   }
 
   return(list(top_dc_pag_ids=top_dc_pag_ids,
-              top_global_pag_ids=top_global_pag_ids,
+              top_symm_diff_pag_ids=top_symm_diff_pag_ids,
               top_mec_pag_ids=top_mec_pag_ids))
 }
 

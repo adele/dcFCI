@@ -156,24 +156,24 @@ getOrdPotSepsetsXY <- function(x, y, ord, pagAdjM, verbose=FALSE) {
 }
 
 #' @importFrom jsonlite toJSON fromJSON
-getPAGListScores <- function(pag_List, ord_global_score="global_score") {
+getPAGListScores <- function(pag_List, ord_pag_score="ord_symm_diff_score") {
   violations <- sapply(pag_List, function (x) {x$violations})
 
-  ord_global_scores <- data.frame()
+  ord_pag_scores <- data.frame()
   for (pag in pag_List) {
-    cur_ord_global_scores <- as.character(toJSON(
+    cur_ord_pag_scores <- as.character(toJSON(
       lapply(pag$ordPAGs, function(x) {
         if (!is.null(x$scores)) {
-          x$scores[[ord_global_score]]
+          x$scores[[ord_pag_score]]
         } else {
           rep(0, 2)
         }
       }), digits=10))
-    ord_global_scores <- rbind.data.frame(ord_global_scores, data.frame(cur_ord_global_scores))
+    ord_pag_scores <- rbind.data.frame(ord_pag_scores, data.frame(cur_ord_pag_scores))
   }
 
-  scores_df = cbind.data.frame(violation=violations, ord_global_scores)
-  colnames(scores_df) <- c("violation", "cur_ord_global_scores")
+  scores_df = cbind.data.frame(violation=violations, ord_pag_scores)
+  colnames(scores_df) <- c("violation", "cur_ord_pag_scores")
 
   return(scores_df)
 }
@@ -262,9 +262,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                   list.max = 500, pH0Thresh=1,
                   log_folder = file.path(getwd(), "tmp", "logs")) {
 
-
-  score_type = "cur_diffs"
-  ord_global_score = "global_score"
+  ord_pag_score = "ord_symm_diff_score"
 
   if (is.null(prob_sel_top)) {
     prob_sel_top = 1
@@ -660,10 +658,10 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     if (nrow(diff_citestResults[[as.character(ord)]]) == 0) {
       for (i in seq_along(cur_ord_pag_list)) {
         if (!cur_ord_pag_list[[i]]$violations) {
-          cur_ord_pag_list[[i]]$scores <- list(global_score=c(1,1),
+          cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=c(1,1),
                                                mec_score=cur_ord_pag_list[[i]]$mec$mec_score)
         } else {
-          cur_ord_pag_list[[i]]$scores <- list(global_score=c(0,0),
+          cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=c(0,0),
                                                mec_score=c(0,0))
         }
         cur_ord_pag_list[[i]]$curord <- ord
@@ -674,10 +672,8 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     #sapply(cur_ord_pag_list, function(x) {x$curord})
 
 
-    #TODO change the name global_score for diff_score or something like that
-    # global_score considers the symmdiff of the cur_ord_pag_list
-    global_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
-                                   score_name = "global_score")
+    ord_symm_diff_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
+                                   score_name = "ord_symm_diff_score")
     # mec_score is the MEC-targetted pag score
     mec_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
                                 score_name = "mec_score")
@@ -690,7 +686,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     #lapply(pag_List, function(x) {(x$mec)})
     #lapply(pag_List, function(x) {(x$scores)})
 
-    top_dc_pag_ids <- getTopPagIds(global_score_df, mec_score_df, ord, sel_top, prob_sel_top)$top_dc_pag_ids
+    top_dc_pag_ids <- getTopPagIds(ord_symm_diff_score_df, mec_score_df, ord, sel_top, prob_sel_top)$top_dc_pag_ids
 
     # Adding to the pag_List all processed PAG that have some violation or
     # are not the best of the current order.
@@ -716,33 +712,33 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
   #sapply(pag_List, function(x) {x$curord})
 
 
-  global_score_df <- rankPAGList(pag_List, max_ord =  ord-1, score_name = "global_score")
+  ord_symm_diff_score_df <- rankPAGList(pag_List, max_ord =  ord-1, score_name = "ord_symm_diff_score")
   mec_score_df <- rankPAGList(pag_List, max_ord =  ord-1, score_name = "mec_score")
-  top_dc_pag_ids_out <- getTopPagIds(global_score_df, mec_score_df, ord-1, sel_top, prob_sel_top)
+  top_dc_pag_ids_out <- getTopPagIds(ord_symm_diff_score_df, mec_score_df, ord-1, sel_top, prob_sel_top)
 
 
-  # Here, we sort the lists and pags according to the global_score
+  # Here, we sort the lists and pags according to the ord_symm_diff_score
   mec_score_df <- mec_score_df[order(mec_score_df$pag_list_id), ]
-  mec_score_df <- mec_score_df[global_score_df$pag_list_id, ]
+  mec_score_df <- mec_score_df[ord_symm_diff_score_df$pag_list_id, ]
 
-  pag_List <- pag_List[global_score_df$pag_list_id]
-  global_score_df$pag_list_id <- 1:length(pag_List)
+  pag_List <- pag_List[ord_symm_diff_score_df$pag_list_id]
+  ord_symm_diff_score_df$pag_list_id <- 1:length(pag_List)
   mec_score_df$pag_list_id <- 1:length(pag_List)
 
   if (prob_sel_top) {
-    top_ids <- which(global_score_df$prob_index <= prob_sel_top & global_score_df$violations == FALSE &
-                       global_score_df$duplicated == FALSE)
+    top_ids <- which(ord_symm_diff_score_df$prob_index <= prob_sel_top & ord_symm_diff_score_df$violations == FALSE &
+                       ord_symm_diff_score_df$duplicated == FALSE)
   } else {
-    top_ids <- which(global_score_df$index <= sel_top & global_score_df$violations == FALSE &
-                       global_score_df$duplicated == FALSE)
+    top_ids <- which(ord_symm_diff_score_df$index <= sel_top & ord_symm_diff_score_df$violations == FALSE &
+                       ord_symm_diff_score_df$duplicated == FALSE)
   }
   top_dcPAGs <- pag_List[top_ids]
-  top_scoresDF <- global_score_df[top_ids,]
+  top_scoresDF <- ord_symm_diff_score_df[top_ids,]
 
   return(list(top_dcPAGs=top_dcPAGs, # PAGs ranked as 1st
               top_scoresDF=top_scoresDF, #scores of top_dcPAGs
               allPAGList=pag_List, # all constructed valid / invalid / duplicated PAGs
-              scoresDF=global_score_df, # scores of all constructed valid / duplicated invalid PAGs
+              scoresDF=ord_symm_diff_score_df, # scores of all constructed valid / duplicated invalid PAGs
               mec_score_df=mec_score_df,
               citestResults=citestResults,
               diff_citestResults=diff_citestResults))
@@ -769,13 +765,13 @@ getProbIndices <- function(min_scores, max_scores) {
 }
 
 rankPAGList <- function(pag_list, max_ord, scores_df=NULL,
-                        score_name="global_score") {
+                        score_name="ord_symm_diff_score") {
 
   if (is.null(scores_df)) {
     scores_df <- getPAGListScores(pag_list, score_name)
   }
 
-  ord_scores_cols_list <- lapply(scores_df$cur_ord_global_scores, fromJSON)
+  ord_scores_cols_list <- lapply(scores_df$cur_ord_pag_scores, fromJSON)
   all_scores <- c()
   for (i in seq_along(ord_scores_cols_list)) {
     cur_ord_scores <- ord_scores_cols_list[[i]]
@@ -795,8 +791,7 @@ rankPAGList <- function(pag_list, max_ord, scores_df=NULL,
   # last computed score is the product of all
   colnames(all_scores) <- c(
     paste0("ord", rep(0:max_ord, each=2),
-           rep(c("_score_lb", "_score_up"), max_ord + 1)))#,
-  #"global_score_lb", "global_score_up")
+           rep(c("_score_lb", "_score_up"), max_ord + 1)))
   row.names(all_scores) <- NULL
 
 
