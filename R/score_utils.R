@@ -104,8 +104,10 @@ getStraightforwardPAGScore <- function(apag, citestResults, m.max = Inf) {
   min_dep_test <- dep_tests[which.min(dep_probs),]
 
   score <- dcFCI::getProbConjunction(c(indep_probs, dep_probs))
+  mse <- dcFCI::getNormalizedSquaredL2DistanceFromCertainty(c(indep_probs, dep_probs))
 
   return(list(score=score,
+              mse=mse,
               min_indep_test = min_indep_test,
               min_dep_test = min_dep_test,
               indep_tests = indep_tests,
@@ -120,6 +122,35 @@ getProbConjunctionFromIntervals <- function(prob_intervals) {
   max_int <- getProbConjunction(sapply(prob_intervals, function(x) {x[2]}))
   vals <- c(min_int, max_int)
   return(c(min(vals), max(vals)))
+}
+
+# equivalences:
+# sum(probs) - (length(probs)-1) --> Frechet's lower bound
+# 1 - sum(1 - probs) --> 1 - (maximum prob of at least one event fails).
+# Note that (1 - prob_i) is the is the maximum possible probability that at
+# least one event fails, given only the marginals. Equality holds only when the
+# failure events are disjoint.
+# the probability that all events succeed is  1 - sum(1 - probs), i.e, at least
+# one minus the maximum possible probability that some event fails
+# sum(1 - probs) is the total slack away from certainty across all events.
+# sum(1 - probs) is also the l1 distance from 1.
+#' @export getL2DistanceFromCertainty
+getL2DistanceFromCertainty <- function(probs) {
+  l2d <- sqrt(sum((rep(1, length(probs)) - probs)^2))
+  return(l2d)
+}
+
+#' @export getSquaredL2DistanceFromCertainty
+getSquaredL2DistanceFromCertainty <- function(probs) {
+  l2d2 <- sum((rep(1, length(probs)) - probs)^2)
+  return(l2d2)
+}
+
+# Same as MSE
+#' @export getNormalizedSquaredL2DistanceFromCertainty
+getNormalizedSquaredL2DistanceFromCertainty <- function(probs) {
+  mse <- getSquaredL2DistanceFromCertainty(probs)/length(probs)
+  return(mse)
 }
 
 #' @export getProbConjunction
@@ -330,8 +361,11 @@ getSymmDiffCITestResults <- function(cur_ord_pag_list, ord,
     cur_diff_citestResults <- diff_citestResults_list[[i]]
     cur_ord_pag_list[[i]]$diff_ord_citestResults <- cur_diff_citestResults
     cur_ord_pag_list[[i]]$curord <- ord
-    cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=c(0,0),
-                                         mec_score=c(0,0))
+    cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=c(0,0,0),
+                                         ord_union_mec_score=c(0,0,0),
+                                         mec_score=c(0,0,0))#,
+                                         #ord_symm_diff_mse=1,
+                                         #mec_mse=1)
     if (i %in% valid_pags_ids) {
       if (!is.null(cur_diff_citestResults) &&
           nrow(cur_diff_citestResults) > 0) {
@@ -341,13 +375,46 @@ getSymmDiffCITestResults <- function(cur_ord_pag_list, ord,
 
         unk_probs <- c()
 
-        diff_citests_score <-
+        # symm diff scores:
+        ord_symm_diff_score <-
           getProbConjunction(c(dep_probs, indep_probs, unk_probs))
-        cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=diff_citests_score,
-                                             mec_score=cur_ord_pag_list[[i]]$mec$mec_score)
+        ord_symm_diff_mse <- getNormalizedSquaredL2DistanceFromCertainty(
+          c(dep_probs, indep_probs, unk_probs))
+        ord_symm_diff_tuple <- c(ord_symm_diff_score[1],  # upper bound
+                                 1 - ord_symm_diff_mse,   # so that the higher, the better
+                                 ord_symm_diff_score[2])  # lower bound
+
+        # union scores -- actually uses only CI tests required while
+        # computing any of the MECs in the list
+        ord_union_mec_score_out <- getStraightforwardPAGScore(
+          cur_ord_pag_list[[i]]$amat.pag, unique_ci_relations[, 1:7], m.max = ord)
+        ord_union_mec_tuple <- c(ord_union_mec_score_out$score[1], # lowwer bound
+                                 1 - ord_union_mec_score_out$mse,  # so that the higher, the better
+                                 ord_union_mec_score_out$score[2]) # upper bound
+
+        # mec scores:
+        mec_score_tuple <- c(cur_ord_pag_list[[i]]$mec$mec_score[1], # lowwer bound
+                             1 - cur_ord_pag_list[[i]]$mec$mec_mse,  # so that the higher, the better
+                             cur_ord_pag_list[[i]]$mec$mec_score[2]) # upper bound
+
+
+
+        cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score = ord_symm_diff_tuple, #ord_symm_diff_score,
+                                             ord_union_mec_score = ord_union_mec_tuple,
+                                             #ord_symm_diff_mse = ord_symm_diff_mse,
+                                             mec_score = mec_score_tuple) #cur_ord_pag_list[[i]]$mec$mec_score,
+                                             #mec_mse = cur_ord_pag_list[[i]]$mec$mec_mse)
       } else {
-        cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=c(1,1),
-                                             mec_score=cur_ord_pag_list[[i]]$mec$mec_score)
+        # mec scores:
+        mec_score_tuple <- c(cur_ord_pag_list[[i]]$mec$mec_score[1],
+                             1 - cur_ord_pag_list[[i]]$mec$mec_mse, # so that the higher, the better
+                             cur_ord_pag_list[[i]]$mec$mec_score[2])
+
+        cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=c(1,1,1),
+                                             ord_union_mec_score = c(1,1,1),
+                                             #ord_symm_diff_mse=0,
+                                             mec_score=mec_score_tuple) #cur_ord_pag_list[[i]]$mec$mec_score,
+                                             #mec_mse = cur_ord_pag_list[[i]]$mec$mec_mse)
       }
     }
     cur_ord_pag_list[[i]]$ordPAGs[[as.character(ord)]] <- cur_ord_pag_list[[i]]
@@ -362,53 +429,156 @@ getSymmDiffCITestResults <- function(cur_ord_pag_list, ord,
 }
 
 
-getTopPagIds <- function(ord_symm_diff_score_df, mec_score_df=NULL,
-                         ord, sel_top, prob_sel_top) {
-  top_mec_pag_ids <- NULL
-  if (!prob_sel_top) {
-    top_symm_diff_pag_ids <- ord_symm_diff_score_df[
-      which(ord_symm_diff_score_df$violation == FALSE &
-              ord_symm_diff_score_df[, paste0("ord", ord, "_score_up")] > 0 &
-              ord_symm_diff_score_df$index <= sel_top &
-              ord_symm_diff_score_df$prob_index <= 1), "pag_list_id"]
+# getTopPagIdsOLD <- function(ord_symm_diff_score_df, mec_score_df=NULL,
+#                          ord, sel_top, prob_sel_top) {
+#   top_mec_pag_ids <- NULL
+#   if (!prob_sel_top) {
+#     top_symm_diff_pag_ids <- ord_symm_diff_score_df[
+#       which(ord_symm_diff_score_df$violation == FALSE &
+#               ord_symm_diff_score_df[, paste0("ord", ord, "_score_up")] > 0 &
+#               ord_symm_diff_score_df$index <= sel_top &
+#               ord_symm_diff_score_df$prob_index <= 1), "pag_list_id"]
+#
+#     if (!is.null(mec_score_df)) {
+#       top_mec_pag_ids <- mec_score_df[
+#         which(mec_score_df$violation == FALSE &
+#                 mec_score_df[, paste0("ord", ord, "_score_up")] >= 0.5 &
+#                 #mec_score_df$index <= sel_top &
+#                 mec_score_df$prob_index <= 1), "pag_list_id"]
+#     }
+#   } else if (prob_sel_top >= 1)  {
+#     top_symm_diff_pag_ids <- ord_symm_diff_score_df[
+#       which(ord_symm_diff_score_df$violation == FALSE &
+#               ord_symm_diff_score_df[, paste0("ord", ord, "_score_up")] > 0 &
+#               ord_symm_diff_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
+#
+#     if (!is.null(mec_score_df)) {
+#       top_mec_pag_ids <- mec_score_df[
+#         which(mec_score_df$violation == FALSE &
+#                 mec_score_df[, paste0("ord", ord, "_score_up")] >= 0.5 &
+#                 mec_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
+#     }
+#   } else {
+#     stop("Use a numeric value for prob_sel_top to select PAGs based on their score interval.")
+#   }
+#
+#   if (length(top_mec_pag_ids) > 0) {
+#     # there are mecs with pretty high probs!
+#     top_dc_pag_ids <- intersect(top_symm_diff_pag_ids, top_mec_pag_ids)
+#     if (length(top_dc_pag_ids) == 0) {
+#       top_dc_pag_ids = unique(c(top_mec_pag_ids, top_symm_diff_pag_ids))
+#     }
+#   } else {
+#     top_dc_pag_ids = top_symm_diff_pag_ids
+#   }
+#
+#   return(list(top_dc_pag_ids=top_dc_pag_ids,
+#               top_symm_diff_pag_ids=top_symm_diff_pag_ids,
+#               top_mec_pag_ids=top_mec_pag_ids))
+# }
+#
 
+
+getTopPagIds <- function(ord_pag_list_score_df,
+                         mec_score_df = NULL,
+                         ord, sel_top, prob_sel_top,
+                         use_mse = FALSE) {
+
+  top_dc_pag_ids <- NULL
+
+  if (!prob_sel_top) {
+    # getting the top "sel_top" pags according to the ord_symm_diff PAG score.
+    top_ord_score_pag_ids <- ord_pag_list_score_df[
+      which(ord_pag_list_score_df$violation == FALSE &
+              ord_pag_list_score_df$duplicated == FALSE &
+              ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_up")] > 0 &
+              ord_pag_list_score_df$index <= sel_top), "pag_list_id"]
+
+    union_pag_ids <- top_ord_score_pag_ids
     if (!is.null(mec_score_df)) {
-      top_mec_pag_ids <- mec_score_df[
+      # getting the top "sel_top" pags according to the mec PAG score.
+      top_mec_score_pag_ids <- mec_score_df[
         which(mec_score_df$violation == FALSE &
-                mec_score_df[, paste0("ord", ord, "_score_up")] >= 0.5 &
-                #mec_score_df$index <= sel_top &
-                mec_score_df$prob_index <= 1), "pag_list_id"]
+              mec_score_df$duplicated == FALSE &
+              mec_score_df$index <= sel_top), "pag_list_id"]
+      # all top PAGs according to the available scores
+      union_pag_ids <- union(top_ord_score_pag_ids, top_mec_score_pag_ids)
     }
   } else if (prob_sel_top >= 1)  {
-    top_symm_diff_pag_ids <- ord_symm_diff_score_df[
-      which(ord_symm_diff_score_df$violation == FALSE &
-              ord_symm_diff_score_df[, paste0("ord", ord, "_score_up")] > 0 &
-              ord_symm_diff_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
+    top_ord_score_pag_ids <- ord_pag_list_score_df[
+      which(ord_pag_list_score_df$violation == FALSE &
+              ord_pag_list_score_df$duplicated == FALSE &
+              ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_up")] > 0 &
+              ord_pag_list_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
 
+    union_pag_ids <- top_ord_score_pag_ids
     if (!is.null(mec_score_df)) {
       top_mec_pag_ids <- mec_score_df[
         which(mec_score_df$violation == FALSE &
-                mec_score_df[, paste0("ord", ord, "_score_up")] >= 0.5 &
-                mec_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
+              mec_score_df$duplicated == FALSE &
+              mec_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
+      union_pag_ids <- union(top_ord_score_pag_ids, top_mec_score_pag_ids)
     }
   } else {
     stop("Use a numeric value for prob_sel_top to select PAGs based on their score interval.")
   }
 
-  if (length(top_mec_pag_ids) > 0) {
-    # there are mecs with pretty high probs!
-    top_dc_pag_ids <- intersect(top_symm_diff_pag_ids, top_mec_pag_ids)
-    if (length(top_dc_pag_ids) == 0) {
-      top_dc_pag_ids = unique(c(top_mec_pag_ids, top_symm_diff_pag_ids))
-    }
-  } else {
-    top_dc_pag_ids = top_symm_diff_pag_ids
+  # Here, we find the minimum scores across all selected top PAGs
+  # first for symmdiff_score_up
+  min_ord_pag_score_up <- min(subset(
+    ord_pag_list_score_df, pag_list_id %in% union_pag_ids)[, paste0("ord", ord, "_symmdiff_score_up")])
+  if (use_mse) {
+    # then  for symmdiff_score_1-mse
+    min_ord_pag_score_1mse <- min(subset(
+      ord_pag_list_score_df, pag_list_id %in% union_pag_ids)[, paste0("ord", ord, "_symmdiff_score_1-mse")])
   }
 
-  return(list(top_dc_pag_ids=top_dc_pag_ids,
-              top_symm_diff_pag_ids=top_symm_diff_pag_ids,
-              top_mec_pag_ids=top_mec_pag_ids))
+  if (!is.null(mec_score_df)) {
+    # first for mec_score_up
+    min_mec_score_up <- min(subset(
+      mec_score_df, pag_list_id %in% union_pag_ids)[, paste0("ord", ord, "_mec_score_up")])
+    if (use_mse) {
+      # then for mec_score_1-mse
+      min_mec_score_1mse <- min(subset(
+        mec_score_df, pag_list_id %in% union_pag_ids)[, paste0("ord", ord, "_mec_score_1-mse")])
+    }
+  }
+
+  # Now, we select all PAGs that are better than such selected PAGs in any of the available scores
+  top_dc_pag_ids <- ord_pag_list_score_df[
+    which(ord_pag_list_score_df$violation == FALSE &
+            ord_pag_list_score_df$duplicated == FALSE &
+            ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_up")] >=
+            min_ord_pag_score_up), "pag_list_id"]
+
+  if (use_mse) {
+    top_dc_pag_ids <- union(top_dc_pag_ids, ord_pag_list_score_df[which(
+    ord_pag_list_score_df$violation == FALSE &
+      ord_pag_list_score_df$duplicated == FALSE &
+      ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_1-mse")] >=
+      min_ord_pag_score_1mse), "pag_list_id"])
+  }
+
+  if (!is.null(mec_score_df)) {
+    top_dc_pag_ids <- union(top_dc_pag_ids, mec_score_df[which(
+      mec_score_df$violation == FALSE &
+        mec_score_df$duplicated == FALSE &
+        mec_score_df[, paste0("ord", ord, "_mec_score_up")] >=
+        min_mec_score_up), "pag_list_id"])
+    if (use_mse) {
+      top_dc_pag_ids <- union(top_dc_pag_ids, mec_score_df[which(
+      mec_score_df$violation == FALSE &
+        mec_score_df$duplicated == FALSE &
+        mec_score_df[, paste0("ord", ord, "_mec_score_1-mse")] >=
+        min_mec_score_1mse), "pag_list_id"])
+    }
+  }
+
+  return(top_dc_pag_ids)
 }
+
+
+
 
 #' @export scorePAGFromCITests
 scorePAGFromCITests <- function(amat.pag, ord=Inf, citestResults, verbose=FALSE) {
@@ -663,9 +833,12 @@ scoreMEC <- function(mec, sepset, max.ord, citestResults, indepTest,
     scored_mec$all_citests[, -ncol(scored_mec$all_citests)]) , ]
   scored_mec$all_citests <- scored_mec$all_citests[order(scored_mec$all_citests$ord), ]
 
-  scored_mec$mec_score <- getProbConjunction(
-    c(subset(scored_mec$all_citests, type == "indep")$pH0,
-      subset(scored_mec$all_citests, type == "dep")$pH1))
+  mec_probs <- c(subset(scored_mec$all_citests, type == "indep")$pH0,
+                 subset(scored_mec$all_citests, type == "dep")$pH1)
+
+  scored_mec$mec_score <- getProbConjunction(mec_probs)
+
+  scored_mec$mec_mse <- getNormalizedSquaredL2DistanceFromCertainty(mec_probs)
 
   return(list(scored_mec=scored_mec,
               citestResults=citestResults))

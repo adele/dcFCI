@@ -28,6 +28,30 @@ getMECFaithfulnessScores <- function(apag, suffStat,
               faithf_mec_indep_counts=faithf_mec_indep_counts))
 }
 
+#' @export getStraightforwardPAGScore2
+getStraightforwardPAGScore2 <- function(apag, suffStat, ord=NULL) {
+  # this checks the agreement with the complete citestResults table
+  faithfulnessDegree <- getFaithfulnessDegree(apag, suffStat$citestResults)
+  l2d <- getL2DistanceFromCertainty(faithfulnessDegree$probs)
+  l2d2 <- getSquaredL2DistanceFromCertainty(faithfulnessDegree$probs)
+  mse <- getNormalizedSquaredL2DistanceFromCertainty(faithfulnessDegree$probs)
+  frechet_int <- getProbConjunction(faithfulnessDegree$probs)
+  return(list(mse=mse, l2d=l2d, l2d2=l2d2, frechetLB=frechet_int[1], frechetUB=frechet_int[2]))
+}
+
+#' @export getMECTargetedPAGScore
+getMECTargetedPAGScore <- function(apag, suffStat, ord=NULL) {
+  mec <- getMEC(apag, scored = TRUE, max.ord = ord, citestResults = suffStat$citestResults)
+  faithfulnessDegree <- getFaithfulnessDegree(apag, mec$mec$all_citests)
+
+  l2d <- getL2DistanceFromCertainty(faithfulnessDegree$probs)
+  l2d2 <- getSquaredL2DistanceFromCertainty(faithfulnessDegree$probs)
+  mse <- getNormalizedSquaredL2DistanceFromCertainty(faithfulnessDegree$probs)
+  frechet_int <- getProbConjunction(faithfulnessDegree$probs)
+  return(list(mse=mse, l2d=l2d, l2d2=l2d2, frechetLB=frechet_int[1], frechetUB=frechet_int[2]))
+}
+
+
 #' @export getFaithfulnessScores
 getFaithfulnessScores <- function(apag, suffStat,
                                   alphas = c(0.01, 0.05), ord=NULL) {
@@ -116,10 +140,13 @@ getFaithfulnessScores <- function(apag, suffStat,
 #' @export getMetrics
 getMetrics <- function(true.amat.pag, est.amat.pag, est.sepset=NULL, dat=NULL,
                        conservative=FALSE) {
-  posneg <- getPAGPosNegMetrics(true.amat.pag, est.amat.pag)
-  fdr <- posneg$false_discovery_rate
-  fomr <- posneg$false_omission_rate
-  shd = shd_PAG(true.amat.pag, est.amat.pag)
+  fdr=NA; fomr=NA; shd=NA
+  if (!is.null(est.amat.pag)) {
+    posneg <- getPAGPosNegMetrics(true.amat.pag, est.amat.pag)
+    fdr <- posneg$false_discovery_rate
+    fomr <- posneg$false_omission_rate
+    shd = shd_PAG(true.amat.pag, est.amat.pag)
+  }
 
   bic <- NA
   hasViol <- msep_violations <- NA

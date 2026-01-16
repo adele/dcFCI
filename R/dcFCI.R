@@ -1,6 +1,7 @@
 getOrdPotSepsets <- function(pagAdjM, ord, alpha, amec,
                              fixedEdges, doneEdges, citestResults,
                              indepTest, suffStat, verbose,
+                             pH0ThreshMin = 0.5,
                              allowNewTests=TRUE) {
   bestSepResults <- c()
 
@@ -42,7 +43,7 @@ getOrdPotSepsets <- function(pagAdjM, ord, alpha, amec,
           pH1 <- citest_out$pH1
           citestResults <- citest_out$citestResults
 
-          if (is.na(pvalue) || pvalue > alpha || pH0 >= 0.5) { # PAGs with and without the edge will be considered
+          if (is.na(pvalue) || pvalue > alpha || pH0 >= pH0ThreshMin) { # PAGs with and without the edge will be considered
             if (verbose) {
               cat(paste0("Adding ", getSepString(Si), " to potsepsets of ", x, " and ", y, "\n"))
             }
@@ -156,7 +157,8 @@ getOrdPotSepsetsXY <- function(x, y, ord, pagAdjM, verbose=FALSE) {
 }
 
 #' @importFrom jsonlite toJSON fromJSON
-getPAGListScores <- function(pag_List, ord_pag_score="ord_symm_diff_score") {
+getPAGListScores <- function(pag_List, ord_pag_score="ord_symm_diff_score",
+                             score_len = 3) {
   violations <- sapply(pag_List, function (x) {x$violations})
 
   ord_pag_scores <- data.frame()
@@ -166,7 +168,7 @@ getPAGListScores <- function(pag_List, ord_pag_score="ord_symm_diff_score") {
         if (!is.null(x$scores)) {
           x$scores[[ord_pag_score]]
         } else {
-          rep(0, 2)
+          rep(0, score_len)
         }
       }), digits=10))
     ord_pag_scores <- rbind.data.frame(ord_pag_scores, data.frame(cur_ord_pag_scores))
@@ -191,9 +193,11 @@ updateSkelScore <- function(apag, ord, citestResults, indepTest,
   apag$mec$all_citests <- unique(rbind(
     apag$mec$all_citests, apag$mec$skel_citests))
 
-  apag$mec$mec_score <- getProbConjunction(
-    c(subset(apag$mec$all_citests, type == "indep")$pH0,
-      subset(apag$mec$all_citests, type == "dep")$pH1))
+  mec_probs <- c(subset(apag$mec$all_citests, type == "indep")$pH0,
+                 subset(apag$mec$all_citests, type == "dep")$pH1)
+
+  apag$mec$mec_score <- getProbConjunction(mec_probs)
+  apag$mec$mec_mse <- getNormalizedSquaredL2DistanceFromCertainty(mec_probs)
 
   citestResults <- out_skel$citestResults
 
@@ -259,7 +263,9 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                   m.max = Inf, fixedGaps = NULL, fixedEdges = NULL,
                   verbose = TRUE, sel_top = 1, prob_sel_top = FALSE,
                   run_parallel = TRUE, allowNewTests=TRUE,
-                  list.max = 500, pH0Thresh=1,
+                  list.max = 500,
+                  pH0ThreshMin=0.5, pH0ThreshMax=1,
+                  use_mse = FALSE,
                   log_folder = file.path(getwd(), "tmp", "logs")) {
 
   ord_pag_score = "ord_symm_diff_score"
@@ -274,12 +280,14 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
 
   getToProcessPAGList <- function(curpag, ord, fixedEdges, alpha, citestResults,
                                   indepTest, suffStat, verbose=TRUE,
-                                  pH0Thresh=1, allowNewTests=TRUE) {
+                                  pH0ThreshMin=0.5, pH0ThreshMax=1,
+                                  allowNewTests=TRUE) {
 
     # inner function to generate the sepsetResultsList in parallel
     checkSepsetResults <- function(ids, sepsetResults, certainSepsetResults) {
+      #cat("ids:", ids, "\n")
       curSepsetResults <- sepsetResults[ids, ]
-      if (length(unique(curSepsetResults[,c(2:3)])) < nrow(curSepsetResults)) {
+      if (nrow(unique(curSepsetResults[,c(2:3)])) < nrow(curSepsetResults)) {
         # there are "duplicated" pairs, so we skip it.
         return(NULL)
       }
@@ -332,6 +340,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     sepsetResultsOut <- getOrdPotSepsets(pagAdjM, ord, alpha, amec,
                                          fixedEdges, doneEdges, citestResults,
                                          indepTest, suffStat, verbose > 1,
+                                         pH0ThreshMin=pH0ThreshMin,
                                          allowNewTests=allowNewTests)
 
     citestResults <- sepsetResultsOut$citestResults
@@ -359,9 +368,9 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     sepsetResultsList <- list()
     if (!is.null(sepsetResults) && nrow(sepsetResults) > 0) {
 
-      # Note: certainsepsets are not only those with pH0 > pH0Thresh, but
+      # Note: certainsepsets are not only those with pH0 > pH0ThreshMax, but
       # also a potential sepset. Those that are not potsepset are simply ignored.
-      certainSepsetResults <- subset(sepsetResults, pH0 >= pH0Thresh)
+      certainSepsetResults <- subset(sepsetResults, pH0 >= pH0ThreshMax)
 
       # if more than one minimal separator is certain, we just get one of them
       # and ignore the others (which will be evaluated in the score as  correct)
@@ -432,316 +441,350 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                 citestResults=citestResults))
   }
 
-  rules = rep(TRUE, 10)
-  p <- length(labels)
+  time_elapsed <- system.time({
+    rules = rep(TRUE, 10)
+    p <- length(labels)
 
-  ## creates the initial skeleton based on fixedGaps and fixedEdges #
-  ###################################################################
+    ## creates the initial skeleton based on fixedGaps and fixedEdges #
+    ###################################################################
 
-  if (is.null(fixedGaps)) {
-    # Then we start with a complete graph
-    # (i.e,. all nodes connected to each other)
-    adjM <- matrix(TRUE, nrow = p, ncol = p)
-  }  else if (!identical(dim(fixedGaps), c(p, p))) {
-    stop("Dimensions of the dataset and fixedGaps do not agree.")
-  } else if (!identical(fixedGaps, t(fixedGaps)) ) {
-    stop("fixedGaps must be symmetric")
-  } else {
-    adjM <- !fixedGaps
-  }
-
-  colnames(adjM) <- rownames(adjM) <- labels
-  diag(adjM) <- FALSE
-
-  if (any(is.null(fixedEdges))) { ## MM: could be sparse
-    fixedEdges <- matrix(rep(FALSE, p * p), nrow = p, ncol = p)
-  } else if (!identical(dim(fixedEdges), c(p, p))) {
-    stop("Dimensions of the dataset and fixedEdges do not agree.")
-  } else if (!identical(fixedEdges, t(fixedEdges)) ) {
-    stop("fixedEdges must be symmetric")
-  }
-
-  ## Creating sepsets
-  ####################
-
-  seq_p <- seq_len(p) # creates a sequence of integers from 1 to p
-  sepset <- lapply(seq_p, function(.) vector("list",p)) # a list of lists [p x p]
-
-  ##### Initializing variables
-  #############################
-
-  citestResults <- c()
-
-  pag_List <- cur_ord_pag_list <- list()
-
-  if (verbose) {
-    cat("Starting with a complete PAG...\n")
-  }
-  mec_out <- getMEC(adjM * 1, ag.type="pag", scored=TRUE, max.ord = NA,
-                    citestResults, indepTest, suffStat,
-                    verbose=verbose > 1, allowNewTests=allowNewTests)
-  citestResults <- mec_out$citestResults
-
-  cur_ord_pag_list[[length(pag_List)+1]] <-
-    list(amat.pag=adjM * 1,
-         sepset=sepset,
-         sepsetResults=c(),
-         doneEdges=fixedEdges | !adjM,
-         scores = NULL,
-         curord = -1,
-         violations=FALSE,
-         done=FALSE,
-         mec=mec_out$mec,
-         ordPAGs=list())
-
-  ord <- 0
-  diff_citestResults <- list() # symmetric difference of citests for all candidate PAGs
-
-  #library(futile.logger)
-
-  # Set up logging to file
-  if (!file.exists(log_folder))
-    dir.create(log_folder, recursive = TRUE)
-
-  futile.logger::flog.appender(futile.logger::appender.file(
-    paste0(file.path(log_folder, "dcfci_log"), format(Sys.time(), '%Y%m%d_%H%M%S%OS.3'), ".txt")),
-    name = "dcfci_log")
-  futile.logger::flog.info(paste("Initializing..."), name = "dcfci_log")
-
-  #system.time({
-  while (ord <= min(m.max, p-2)) {
-
-    prev_cur_ord_pag_list <- cur_ord_pag_list
-
-    todo_pag_ids <- c()
-    if (length(cur_ord_pag_list) > 0) {
-      todo_pag_ids <- which(sapply(cur_ord_pag_list, function(x) {
-        any(!x[["doneEdges"]])}))
+    if (is.null(fixedGaps)) {
+      # Then we start with a complete graph
+      # (i.e,. all nodes connected to each other)
+      adjM <- matrix(TRUE, nrow = p, ncol = p)
+    }  else if (!identical(dim(fixedGaps), c(p, p))) {
+      stop("Dimensions of the dataset and fixedGaps do not agree.")
+    } else if (!identical(fixedGaps, t(fixedGaps)) ) {
+      stop("fixedGaps must be symmetric")
+    } else {
+      adjM <- !fixedGaps
     }
 
-    if (length(todo_pag_ids) == 0 || length(todo_pag_ids) >= list.max) {
-      break
+    colnames(adjM) <- rownames(adjM) <- labels
+    diag(adjM) <- FALSE
+
+    if (any(is.null(fixedEdges))) { ## MM: could be sparse
+      fixedEdges <- matrix(rep(FALSE, p * p), nrow = p, ncol = p)
+    } else if (!identical(dim(fixedEdges), c(p, p))) {
+      stop("Dimensions of the dataset and fixedEdges do not agree.")
+    } else if (!identical(fixedEdges, t(fixedEdges)) ) {
+      stop("fixedEdges must be symmetric")
     }
 
-    # todo_pag_ids indicate the PAGs with top scores from previous ord
-    todo_pag_list <- cur_ord_pag_list[todo_pag_ids]
-    cur_ord_pag_list <-  cur_ord_pag_list[-todo_pag_ids]
+    ## Creating sepsets
+    ####################
 
-    if (verbose)
-      cat("length of todo_pag_list in ord=: ", ord, ": ", length(todo_pag_list), "\n")
+    seq_p <- seq_len(p) # creates a sequence of integers from 1 to p
+    sepset <- lapply(seq_p, function(.) vector("list",p)) # a list of lists [p x p]
 
-    toProcessPAGLists <- list()
-    has_errors <- FALSE
-    for (i in seq_along(todo_pag_list))  {
-      curpag <- todo_pag_list[[i]]
-      # updating mec of curpag to the current ord
-      if (verbose)
-        cat("Updating MEC skel of previous best candidate PAG", i, "/",
-            length(todo_pag_list), " to ord", ord, "...\n")
+    ##### Initializing variables
+    #############################
 
-      skel_out <- updateSkelScore(curpag, ord, citestResults, indepTest,
-                                  suffStat, verbose > 1, allowNewTests)
-      curpag <- skel_out$apag
-      citestResults <- skel_out$citestResults
+    citestResults <- c()
+
+    pag_List <- cur_ord_pag_list <- list()
+
+    if (verbose) {
+      cat("Starting with a complete PAG...\n")
+    }
+    mec_out <- getMEC(adjM * 1, ag.type="pag", scored=TRUE, max.ord = NA,
+                      citestResults, indepTest, suffStat,
+                      verbose=verbose > 1, allowNewTests=allowNewTests)
+    citestResults <- mec_out$citestResults
+
+    cur_ord_pag_list[[length(pag_List)+1]] <-
+      list(amat.pag=adjM * 1,
+           sepset=sepset,
+           sepsetResults=c(),
+           doneEdges=fixedEdges | !adjM,
+           scores = NULL,
+           curord = -1,
+           violations=FALSE,
+           done=FALSE,
+           mec=mec_out$mec,
+           ordPAGs=list())
+
+    ord <- 0
+    diff_citestResults <- list() # symmetric difference of citests for all candidate PAGs
+
+    #library(futile.logger)
+
+    # Set up logging to file
+    if (!file.exists(log_folder))
+      dir.create(log_folder, recursive = TRUE)
+
+    futile.logger::flog.appender(futile.logger::appender.file(
+      paste0(file.path(log_folder, "dcfci_log"), format(Sys.time(), '%Y%m%d_%H%M%S%OS.3'), ".txt")),
+      name = "dcfci_log")
+    futile.logger::flog.info(paste("Initializing..."), name = "dcfci_log")
 
 
-      if (verbose)
-        cat("Getting corresponding list of PAGs to process", i, "/",
-            length(todo_pag_list), "...\n")
+    while (ord <= min(m.max, p-2)) {
 
-      # this will potentially run in parallel, so the outer loop
-      # cannot run in parallel as well.
-      outList <- getToProcessPAGList(
-        curpag, ord, fixedEdges, alpha, citestResults,
-        indepTest, suffStat, verbose > 1, pH0Thresh, allowNewTests)
+      prev_cur_ord_pag_list <- cur_ord_pag_list
 
-      if (!is.null(outList)) {
-        toProcessPAGLists[[i]] <- outList
-      } else {
-        has_errors <- TRUE
-        toProcessPAGLists <- NULL
+      todo_pag_ids <- c()
+      if (length(cur_ord_pag_list) > 0) {
+        todo_pag_ids <- which(sapply(cur_ord_pag_list, function(x) {
+          any(!x[["doneEdges"]])}))
+      }
+
+      if (length(todo_pag_ids) == 0 || length(todo_pag_ids) >= list.max) {
         break
       }
-    }
 
-    toProcessPAGList <- list()
-    if (!has_errors) {
-      all_citestResults <- citestResults
-      for (i in seq_along(toProcessPAGLists)) {
-        if (is.null(toProcessPAGLists[[i]]$toProcessPAGList) || length(toProcessPAGLists[[i]]$toProcessPAGList) == 0) {
-          # Adding the PAG without applying any minimal conditional independencies,
-          # which requires no processing in this ord
-          #if (!all(toProcessPAGLists[[i]]$curpag$doneEdges)) {
-            cur_ord_pag_list[[length(cur_ord_pag_list)+1]] <- toProcessPAGLists[[i]]$curpag
-          #}
-        } else {
-          toProcessPAGList <- c(toProcessPAGList,
-                                toProcessPAGLists[[i]]$toProcessPAGList)
-        }
-        all_citestResults <- rbind(all_citestResults, toProcessPAGLists[[i]]$citestResults)
-      }
-      # tests from previous order plus those to find separators at the current order.
-      citestResults <- all_citestResults[!duplicated(all_citestResults[,1:4]),]
-
-      toProcessPAGList <- getUniquePAGList(toProcessPAGList, key="sepset")$pag_List
+      # todo_pag_ids indicate the PAGs with top scores from previous ord
+      todo_pag_list <- cur_ord_pag_list[todo_pag_ids]
+      cur_ord_pag_list <-  cur_ord_pag_list[-todo_pag_ids]
 
       if (verbose)
-        cat("curord:", ord, "; length of toProcessPAGList: ", length(toProcessPAGList), "\n")
-      if (length(toProcessPAGList) > list.max) {
-        cat("ERROR: The maximum list size of", list.max, "has been exceeded.\n")
-        has_errors <- TRUE
-      }
-    }
+        cat("length of todo_pag_list in ord=: ", ord, ": ", length(todo_pag_list), "\n")
 
-    if (has_errors) {
-      toProcessPAGList <- NULL
-      cur_ord_pag_list <- prev_cur_ord_pag_list
-      break
-    }
+      toProcessPAGLists <- list()
+      has_errors <- FALSE
+      for (i in seq_along(todo_pag_list))  {
+        curpag <- todo_pag_list[[i]]
+        # updating mec of curpag to the current ord
+        if (verbose)
+          cat("Updating MEC skel of previous best candidate PAG", i, "/",
+              length(todo_pag_list), " to ord", ord, "...\n")
 
-    #lapply(toProcessPAGList, function(x) {formatSepset(x$sepset)})
-
-    if (length(toProcessPAGList) > 0) {
-      if (run_parallel) {
-        # Process each PAG by applying the rules of the FCI, checking for
-        # violations, and computing the scored MEC
-        out_processed <- future_lapply(1:length(toProcessPAGList),
-                                       processPotPAG, toProcessPAGList,
-                                       ord, citestResults, indepTest, suffStat,
-                                       verbose=verbose > 1,
-                                       allowNewTests=allowNewTests, future.seed=TRUE)
-
-        # Updating used citestResults and newProcessedPAGList
-        all_citestResults <- citestResults
-        newProcessedPAGList <- list()
-        for (i in seq_along(out_processed)) {
-          newProcessedPAGList[[i]] <- out_processed[[i]]$potPAG
-          all_citestResults <- rbind(all_citestResults, out_processed[[i]]$citestResults)
-        }
-      } else {
-        all_citestResults <- citestResults
-        newProcessedPAGList <- list()
-        for (i in seq_along(toProcessPAGList)) {
-          if (verbose)
-            cat("Processing PAG", i, "/", length(toProcessPAGList), "\n")
-          out_processed <- processPotPAG(i, toProcessPAGList, ord,
-                                         citestResults, indepTest,
-                                         suffStat, verbose=verbose > 1,
-                                         allowNewTests=allowNewTests)
-          all_citestResults <- rbind(all_citestResults, out_processed$citestResults)
-          newProcessedPAGList[[i]] <- out_processed$potPAG
-        }
-      }
-      citestResults <- all_citestResults[!duplicated(all_citestResults[,1:4]),]
+        skel_out <- updateSkelScore(curpag, ord, citestResults, indepTest,
+                                    suffStat, verbose > 1, allowNewTests)
+        curpag <- skel_out$apag
+        citestResults <- skel_out$citestResults
 
 
-      #lapply(newProcessedPAGList, function(x) {formatSepset(x$sepset)})
+        if (verbose)
+          cat("Getting corresponding list of PAGs to process", i, "/",
+              length(todo_pag_list), "...\n")
 
-      cur_ord_pag_list <- c(cur_ord_pag_list, newProcessedPAGList)
+        # this will potentially run in parallel, so the outer loop
+        # cannot run in parallel as well.
+        outList <- getToProcessPAGList(
+          curpag, ord, fixedEdges, alpha, citestResults,
+          indepTest, suffStat, verbose > 1, pH0ThreshMin, pH0ThreshMax, allowNewTests)
 
-
-      symm_out <- getSymmDiffCITestResults(cur_ord_pag_list, ord,
-                                           verbose=verbose >1)
-
-      #lapply(symm_out$cur_ord_pag_list, function(x) {x$scores})
-
-      diff_citestResults[[as.character(ord)]] <- symm_out$symmDiffCITests
-      cur_ord_pag_list <- symm_out$cur_ord_pag_list
-
-    } else {
-      diff_citestResults[[as.character(ord)]] <- data.frame()
-    }
-
-    #sapply(cur_ord_pag_list, function(x) {x$violations})
-
-
-    if (nrow(diff_citestResults[[as.character(ord)]]) == 0) {
-      for (i in seq_along(cur_ord_pag_list)) {
-        if (!cur_ord_pag_list[[i]]$violations) {
-          cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=c(1,1),
-                                               mec_score=cur_ord_pag_list[[i]]$mec$mec_score)
+        if (!is.null(outList)) {
+          toProcessPAGLists[[i]] <- outList
         } else {
-          cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score=c(0,0),
-                                               mec_score=c(0,0))
+          has_errors <- TRUE
+          toProcessPAGLists <- NULL
+          break
         }
-        cur_ord_pag_list[[i]]$curord <- ord
-        cur_ord_pag_list[[i]]$ordPAGs[[as.character(ord)]] <- cur_ord_pag_list[[i]]
       }
+
+      toProcessPAGList <- list()
+      if (!has_errors) {
+        all_citestResults <- citestResults
+        for (i in seq_along(toProcessPAGLists)) {
+          if (is.null(toProcessPAGLists[[i]]$toProcessPAGList) || length(toProcessPAGLists[[i]]$toProcessPAGList) == 0) {
+            # Adding the PAG without applying any minimal conditional independencies,
+            # which requires no processing in this ord
+            #if (!all(toProcessPAGLists[[i]]$curpag$doneEdges)) {
+              cur_ord_pag_list[[length(cur_ord_pag_list)+1]] <- toProcessPAGLists[[i]]$curpag
+            #}
+          } else {
+            toProcessPAGList <- c(toProcessPAGList,
+                                  toProcessPAGLists[[i]]$toProcessPAGList)
+          }
+          all_citestResults <- rbind(all_citestResults, toProcessPAGLists[[i]]$citestResults)
+        }
+        # tests from previous order plus those to find separators at the current order.
+        citestResults <- all_citestResults[!duplicated(all_citestResults[,1:4]),]
+
+        toProcessPAGList <- getUniquePAGList(toProcessPAGList, key="sepset")$pag_List
+
+        if (verbose)
+          cat("curord:", ord, "; length of toProcessPAGList: ", length(toProcessPAGList), "\n")
+        if (length(toProcessPAGList) > list.max) {
+          cat("ERROR: The maximum list size of", list.max, "has been exceeded.\n")
+          has_errors <- TRUE
+        }
+      }
+
+      if (has_errors) {
+        toProcessPAGList <- NULL
+        cur_ord_pag_list <- prev_cur_ord_pag_list
+        break
+      }
+
+      #lapply(toProcessPAGList, function(x) {formatSepset(x$sepset)})
+
+      if (length(toProcessPAGList) > 0) {
+        if (run_parallel) {
+          # Process each PAG by applying the rules of the FCI, checking for
+          # violations, and computing the scored MEC
+          out_processed <- future_lapply(1:length(toProcessPAGList),
+                                         processPotPAG, toProcessPAGList,
+                                         ord, citestResults, indepTest, suffStat,
+                                         verbose=verbose > 1,
+                                         allowNewTests=allowNewTests, future.seed=TRUE)
+
+          # Updating used citestResults and newProcessedPAGList
+          all_citestResults <- citestResults
+          newProcessedPAGList <- list()
+          for (i in seq_along(out_processed)) {
+            newProcessedPAGList[[i]] <- out_processed[[i]]$potPAG
+            all_citestResults <- rbind(all_citestResults, out_processed[[i]]$citestResults)
+          }
+        } else {
+          all_citestResults <- citestResults
+          newProcessedPAGList <- list()
+          for (i in seq_along(toProcessPAGList)) {
+            if (verbose)
+              cat("Processing PAG", i, "/", length(toProcessPAGList), "\n")
+            out_processed <- processPotPAG(i, toProcessPAGList, ord,
+                                           citestResults, indepTest,
+                                           suffStat, verbose=verbose > 1,
+                                           allowNewTests=allowNewTests)
+            all_citestResults <- rbind(all_citestResults, out_processed$citestResults)
+            newProcessedPAGList[[i]] <- out_processed$potPAG
+          }
+        }
+        citestResults <- all_citestResults[!duplicated(all_citestResults[,1:4]),]
+
+
+        #lapply(newProcessedPAGList, function(x) {formatSepset(x$sepset)})
+
+        cur_ord_pag_list <- c(cur_ord_pag_list, newProcessedPAGList)
+
+
+        symm_out <- getSymmDiffCITestResults(cur_ord_pag_list, ord,
+                                             verbose=verbose >1)
+
+        #lapply(symm_out$cur_ord_pag_list, function(x) {x$scores})
+
+        diff_citestResults[[as.character(ord)]] <- symm_out$symmDiffCITests
+        cur_ord_pag_list <- symm_out$cur_ord_pag_list
+
+      } else {
+        diff_citestResults[[as.character(ord)]] <- data.frame()
+      }
+
+      #sapply(cur_ord_pag_list, function(x) {x$violations})
+
+
+      if (nrow(diff_citestResults[[as.character(ord)]]) == 0) {
+        for (i in seq_along(cur_ord_pag_list)) {
+          # since all pags in the current order do not differ in their mec citests,
+          # their union score is simply the mec score...
+          mec_score_tuple <- c(cur_ord_pag_list[[i]]$mec$mec_score[1],
+                               1 - cur_ord_pag_list[[i]]$mec$mec_mse, # so that the higher, the better
+                               cur_ord_pag_list[[i]]$mec$mec_score[2])
+          if (!cur_ord_pag_list[[i]]$violations) {
+            cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score = c(1,1,1),
+                                                 ord_union_mec_score = mec_score_tuple,
+                                                 mec_score = mec_score_tuple)#cur_ord_pag_list[[i]]$mec$mec_score,
+                                                 #mec_mse=cur_ord_pag_list[[i]]$mec$mec_mse,
+                                                 #ord_symm_diff_mse=0)
+          } else {
+            cur_ord_pag_list[[i]]$scores <- list(ord_symm_diff_score = c(0,0,0),
+                                                 ord_union_mec_score = c(0,0,0),
+                                                 mec_score = c(0,0,0))#,
+                                                 #mec_mse=1,
+                                                 #ord_symm_diff_mse=1)
+          }
+          cur_ord_pag_list[[i]]$curord <- ord
+          cur_ord_pag_list[[i]]$ordPAGs[[as.character(ord)]] <- cur_ord_pag_list[[i]]
+        }
+      }
+
+      #sapply(cur_ord_pag_list, function(x) {x$curord})
+
+
+      ord_pag_list_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
+                                            score_type = "pag_list")
+
+      # mec_score is the MEC-targetted pag score
+      mec_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
+                                  score_type = "mec")
+
+      #lapply(pag_List, function(x) {(x$mec)})
+      #lapply(pag_List, function(x) {(x$scores)})
+
+      #TODO: should I really continue with all duplicated, equally scored amat?
+      top_dc_pag_ids <- getTopPagIds(ord_pag_list_score_df,
+                                     mec_score_df,
+                                     ord, sel_top, prob_sel_top,
+                                     use_mse = use_mse)
+
+      # subset(mec_score_df, pag_list_id %in% top_dc_pag_ids)
+      # subset(ord_pag_list_score_df, pag_list_id %in% top_dc_pag_ids)
+
+      # Adding to the pag_List all processed PAG that have some violation or
+      # are not the best of the current order.
+      pag_List <- c(pag_List, cur_ord_pag_list[-top_dc_pag_ids])
+
+      #lapply(cur_ord_pag_list, function(x) {formatSepset(x$sepset)})
+      #sapply(pag_List, function(x) {x$curord})
+
+      # The other ones proceed to the next order.
+      cur_ord_pag_list <- cur_ord_pag_list[top_dc_pag_ids]
+
+      #lapply(cur_ord_pag_list, function(x) {formatSepset(x$sepset)})
+      #sapply(cur_ord_pag_list, function(x) {x$curord})
+
+      ord = ord + 1
+      if (verbose)
+        cat("ord=", ord, "\n")
     }
 
-    #sapply(cur_ord_pag_list, function(x) {x$curord})
-
-
-    ord_symm_diff_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
-                                   score_name = "ord_symm_diff_score")
-    # mec_score is the MEC-targetted pag score
-    mec_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
-                                score_name = "mec_score")
-
-#     cur_ret <- list(cur_ord_pag_list=cur_ord_pag_list,
-#                     pag_List=pag_List,
-#                     citestResults=citestResults,
-#                     diff_citestResults=diff_citestResults)
-
-    #lapply(pag_List, function(x) {(x$mec)})
-    #lapply(pag_List, function(x) {(x$scores)})
-
-    top_dc_pag_ids <- getTopPagIds(ord_symm_diff_score_df, mec_score_df, ord, sel_top, prob_sel_top)$top_dc_pag_ids
-
-    # Adding to the pag_List all processed PAG that have some violation or
-    # are not the best of the current order.
-    pag_List <- c(pag_List, cur_ord_pag_list[-top_dc_pag_ids])
-
+    pag_List <- c(pag_List, cur_ord_pag_list)
     #lapply(pag_List, function(x) {formatSepset(x$sepset)})
     #sapply(pag_List, function(x) {x$curord})
 
-    # The other ones proceed to the next order.
-    cur_ord_pag_list <- cur_ord_pag_list[top_dc_pag_ids]
 
-    #lapply(cur_ord_pag_list, function(x) {formatSepset(x$sepset)})
-    #sapply(cur_ord_pag_list, function(x) {x$curord})
+    ord_pag_list_score_df <- rankPAGList(pag_List, max_ord = ord-1,
+                                         score_type = "pag_list")
 
-
-    ord = ord + 1
-    if (verbose)
-      cat("ord=", ord, "\n")
-  }
-
-  pag_List <- c(pag_List, cur_ord_pag_list)
-  #lapply(pag_List, function(x) {formatSepset(x$sepset)})
-  #sapply(pag_List, function(x) {x$curord})
+    mec_score_df <- rankPAGList(pag_List, max_ord =  ord-1,
+                                score_type = "mec")
 
 
-  ord_symm_diff_score_df <- rankPAGList(pag_List, max_ord =  ord-1, score_name = "ord_symm_diff_score")
-  mec_score_df <- rankPAGList(pag_List, max_ord =  ord-1, score_name = "mec_score")
-  top_dc_pag_ids_out <- getTopPagIds(ord_symm_diff_score_df, mec_score_df, ord-1, sel_top, prob_sel_top)
+    # Putting the score tables again in the order of the pag ids
+    ord_pag_list_score_df <- ord_pag_list_score_df[
+      order(ord_pag_list_score_df$pag_list_id), ]
+
+    # PAGs are now sorted according to their MEC-Targeted Score (mec_score_df)
+    pag_List <- pag_List[mec_score_df$pag_list_id]
+
+    # First tables are sorted according to the order in mec_score_df
+    ord_pag_list_score_df <- ord_pag_list_score_df[mec_score_df$pag_list_id, ]
 
 
-  # Here, we sort the lists and pags according to the ord_symm_diff_score
-  mec_score_df <- mec_score_df[order(mec_score_df$pag_list_id), ]
-  mec_score_df <- mec_score_df[ord_symm_diff_score_df$pag_list_id, ]
+    # Then the order is set sequentially across all score tables
+    mec_score_df$pag_list_id <- 1:length(pag_List)
+    ord_pag_list_score_df$pag_list_id <- 1:length(pag_List)
 
-  pag_List <- pag_List[ord_symm_diff_score_df$pag_list_id]
-  ord_symm_diff_score_df$pag_list_id <- 1:length(pag_List)
-  mec_score_df$pag_list_id <- 1:length(pag_List)
+    #selects those with top mec_score upper bound at the last iteration
+    if (prob_sel_top) {
+      top_ids <- which(mec_score_df$prob_index <= prob_sel_top &
+                         mec_score_df$violations == FALSE &
+                         mec_score_df$duplicated == FALSE)
+    } else {
+      top_ids <- which(mec_score_df$index <= sel_top &
+                         mec_score_df$violations == FALSE &
+                         mec_score_df$duplicated == FALSE)
+      top_mec_score_up <- mec_score_df[top_ids, 1]
+      top_ids <- which(
+        mec_score_df$violations == FALSE &
+          mec_score_df$duplicated == FALSE &
+          mec_score_df[, paste0("ord", ord-1, "_mec_score_up")] >= top_mec_score_up)
+    }
 
-  if (prob_sel_top) {
-    top_ids <- which(ord_symm_diff_score_df$prob_index <= prob_sel_top & ord_symm_diff_score_df$violations == FALSE &
-                       ord_symm_diff_score_df$duplicated == FALSE)
-  } else {
-    top_ids <- which(ord_symm_diff_score_df$index <= sel_top & ord_symm_diff_score_df$violations == FALSE &
-                       ord_symm_diff_score_df$duplicated == FALSE)
-  }
-  top_dcPAGs <- pag_List[top_ids]
-  top_scoresDF <- ord_symm_diff_score_df[top_ids,]
+
+    top_dcPAGs <- pag_List[top_ids]
+    top_scoresDF <- mec_score_df[top_ids,]
+  })
 
   return(list(top_dcPAGs=top_dcPAGs, # PAGs ranked as 1st
-              top_scoresDF=top_scoresDF, #scores of top_dcPAGs
+              top_scoresDF=top_scoresDF, #MEC-targeted scores of top_dcPAGs
               allPAGList=pag_List, # all constructed valid / invalid / duplicated PAGs
-              scoresDF=ord_symm_diff_score_df, # scores of all constructed valid / duplicated invalid PAGs
               mec_score_df=mec_score_df,
-              citestResults=citestResults,
-              diff_citestResults=diff_citestResults))
+              ord_pag_list_score_df=ord_pag_list_score_df,
+              diff_citestResults=diff_citestResults,
+              time_elapsed=as.numeric(time_elapsed)[3]))
 }
 
 getProbIndices <- function(min_scores, max_scores) {
@@ -764,49 +807,100 @@ getProbIndices <- function(min_scores, max_scores) {
   return(grp)
 }
 
-rankPAGList <- function(pag_list, max_ord, scores_df=NULL,
-                        score_name="ord_symm_diff_score") {
+# score_type = "pag_list" or "mec"
+# "pag_list" uses the symmetric difference and union
+# of the mec scores of all pags in the list
+# "mec" is a standalone score, but cannot be used for comparisons.
+# score order if score_type == "pag_list":
+# ord_symm_diff_up, ord_symm_diff_mse, ord_union_up, ord_union_mse
+# ord_symm_diff_low, ord_union_low
+rankPAGList <- function(pag_list, max_ord,
+                        score_type = "pag_list") {
 
-  if (is.null(scores_df)) {
-    scores_df <- getPAGListScores(pag_list, score_name)
+  score_names=c("ord_symm_diff_score", "ord_union_mec_score")
+  score_short_names = c("symmdiff", "union")
+  if (score_type == "mec") {
+      score_names <- c("mec_score")
+      score_short_names = c("mec")
   }
 
-  ord_scores_cols_list <- lapply(scores_df$cur_ord_pag_scores, fromJSON)
-  all_scores <- c()
-  for (i in seq_along(ord_scores_cols_list)) {
-    cur_ord_scores <- ord_scores_cols_list[[i]]
-    ord_ints <- c()
-    for (j in 0:(max_ord)) {
-      cur_int <- cur_ord_scores[[as.character(j)]]
-      if (is.null(cur_int)) {
-        cur_int <- c(0,0)
+  score_len = 3
+  score_labels = c("score_lb", "score_1-mse", "score_up")
+
+  all_scores_list <- list()
+  for (score_i in 1:length(score_names)) {
+    score_name <- score_names[score_i]
+    score_short_name <- score_short_names[score_i]
+
+    scores_df <- getPAGListScores(pag_list, score_name, score_len)
+
+    ord_scores_cols_list <- lapply(scores_df$cur_ord_pag_scores, fromJSON)
+
+    all_scores <- data.frame()
+    for (i in seq_along(ord_scores_cols_list)) {
+      cur_ord_scores <- ord_scores_cols_list[[i]]
+      ord_ints <- c()
+      for (j in 0:(max_ord)) {
+        cur_int <- (cur_ord_scores[[as.character(j)]])
+        if (is.null(cur_int) || length(cur_int) == 0) {
+          cur_int <- rep(NA, score_len)
+        }
+        ord_ints <- c(ord_ints, cur_int)
       }
-      ord_ints <- c(ord_ints, cur_int)
+      all_scores <- rbind.data.frame(all_scores, ord_ints)
     }
-    all_scores <- rbind(all_scores, ord_ints)
+    all_scores <- as.data.frame(all_scores)
+
+    # last computed score is the product of all
+    colnames(all_scores) <- c(
+      paste0("ord", rep(0:max_ord, each=score_len),
+             rep(paste0("_", score_short_name, "_", score_labels), max_ord + 1)))
+
+    row.names(all_scores) <- NULL
+
+    all_scores_list[[score_name]] <- all_scores
   }
-  all_scores <- as.data.frame(all_scores)
 
+  all_scores <- all_scores_list[[score_names[1]]]
+  if (length(score_names) > 1) {
+    for (score_i in 2:length(score_names)) {
+      score_name <- score_names[score_i]
+      all_scores <- cbind.data.frame(all_scores, all_scores_list[[score_name]])
+    }
+  }
 
-  # last computed score is the product of all
-  colnames(all_scores) <- c(
-    paste0("ord", rep(0:max_ord, each=2),
-           rep(c("_score_lb", "_score_up"), max_ord + 1)))
-  row.names(all_scores) <- NULL
+  ordered_labels <- c()
+  for (cur_ord in seq(max_ord,0,-1)) {
+    for (score_short_name in score_short_names) {
+      ordered_labels <- c(ordered_labels,
+                        paste0("ord", cur_ord,
+                               paste0("_", score_short_name, "_",
+                                      c("score_up", "score_1-mse"))))
+    }
+  }
+  for (cur_ord in seq(max_ord,0,-1)) {
+    for (score_short_name in score_short_names) {
+      ordered_labels <- c(ordered_labels,
+                          paste0("ord", cur_ord,
+                                 paste0("_", score_short_name, "_",
+                                        c("score_lb"))))
+    }
+  }
 
-
-  tmp_scores <- cbind(
-    all_scores[, c(seq(ncol(all_scores), 2, by=-2), seq(ncol(all_scores)-1, 1, by=-2))],
-    pag_list_id=1:nrow(all_scores)
-  )
+  tmp_scores <- cbind.data.frame(
+    all_scores[, ordered_labels, drop = FALSE],
+    pag_list_id=1:nrow(all_scores))
 
   ordered_ids <- dplyr::arrange_all(tmp_scores, dplyr::desc)$pag_list_id
+
+
 
   tmp_scores[, "violations"] <- scores_df$violation
   tmp_scores <- tmp_scores[ordered_ids, ]
 
   # all_scores are sorted already...
-  index_start_ids <- which(!duplicated(tmp_scores[,-which(colnames(tmp_scores) == "pag_list_id")]))
+  index_start_ids <- which(!duplicated(
+    tmp_scores[,-which(colnames(tmp_scores) == "pag_list_id")]))
   tmp_scores[index_start_ids, "index"] <- 1:length(index_start_ids)
   for (i in 1:nrow(tmp_scores)) {
     if (is.na(tmp_scores[i, "index"])) {
@@ -814,19 +908,186 @@ rankPAGList <- function(pag_list, max_ord, scores_df=NULL,
     }
   }
 
+  prob_indices <- getProbIndices(
+    tmp_scores[, paste0("ord", max_ord, "_", score_short_names[1], "_score_lb")],
+    tmp_scores[, paste0("ord", max_ord, "_", score_short_names[1], "_score_up")])
   new_scores_df <- cbind(tmp_scores,
-                         "prob_index"= getProbIndices(
-                           tmp_scores[, paste0("ord", max_ord, "_score_lb")],
-                           tmp_scores[, paste0("ord", max_ord, "_score_up")]))
+                         "prob_index"= prob_indices)
 
-  unique_pag_ids <- getUniquePAGList(pag_list, key="amat")$ids
+  unique_pag_ids <- getUniquePAGList(
+    pag_list[new_scores_df$pag_list_id], key="amat")$ids
   new_scores_df$duplicated <- TRUE
-  new_scores_df[unique_pag_ids,"duplicated"] <- FALSE
-
+  new_scores_df[unique_pag_ids, "duplicated"] <- FALSE
 
   return(new_scores_df)
 }
 
+#
+# rankPAGListOLD2 <- function(pag_list, max_ord, scores_df=NULL,
+#                         score_name="ord_symm_diff_score",
+#                         score_len = 3,
+#                         score_labels = c("_score_lb", "_score_1-mse", "_score_up")) {
+#
+#   if (is.null(scores_df)) {
+#     scores_df <- getPAGListScores(pag_list, score_name, score_len)
+#   }
+#
+#   ord_scores_cols_list <- lapply(scores_df$cur_ord_pag_scores, fromJSON)
+#   all_scores <- data.frame()
+#   for (i in seq_along(ord_scores_cols_list)) {
+#     cur_ord_scores <- ord_scores_cols_list[[i]]
+#     ord_ints <- c()
+#     for (j in 0:(max_ord)) {
+#       cur_int <- (cur_ord_scores[[as.character(j)]])
+#       if (is.null(cur_int) || length(cur_int) == 0) {
+#         cur_int <- rep(NA, score_len)
+#       }
+#       ord_ints <- c(ord_ints, cur_int)
+#     }
+#     all_scores <- rbind.data.frame(all_scores, ord_ints)
+#   }
+#   all_scores <- as.data.frame(all_scores)
+#
+#
+#
+#
+#   # last computed score is the product of all
+#   colnames(all_scores) <- c(
+#       paste0("ord", rep(0:max_ord, each=score_len),
+#            rep(score_labels, max_ord + 1)))
+#
+#   row.names(all_scores) <- NULL
+#
+#   if (grepl("mse", score_name, fixed=TRUE)) { # score_name:  ord_symm_diff_mse" or "mec_mse") {
+#     tmp_scores <- cbind.data.frame(
+#       all_scores[, c(seq(ncol(all_scores), 1, by=-1)), drop = FALSE],
+#       pag_list_id=1:nrow(all_scores))
+#     ordered_ids <- dplyr::arrange_all(tmp_scores)$pag_list_id
+#   } else {
+#     ordered_labels <- c()
+#     for (cur_ord in seq(max_ord,0,-1)) {
+#       ordered_labels <- c(ordered_labels,
+#                           paste0("ord", cur_ord, c("_score_up", "_score_1-mse")))
+#     }
+#     for (cur_ord in seq(max_ord,0,-1)) {
+#       ordered_labels <- c(ordered_labels,
+#                           paste0("ord", cur_ord, "_score_lb"))
+#     }
+#     tmp_scores <- cbind.data.frame(
+#       all_scores[, ordered_labels, drop = FALSE],
+#       pag_list_id=1:nrow(all_scores))
+#
+#     ordered_ids <- dplyr::arrange_all(tmp_scores, dplyr::desc)$pag_list_id
+#   }
+#
+#
+#   tmp_scores[, "violations"] <- scores_df$violation
+#   tmp_scores <- tmp_scores[ordered_ids, ]
+#
+#   # all_scores are sorted already...
+#   index_start_ids <- which(!duplicated(tmp_scores[,-which(colnames(tmp_scores) == "pag_list_id")]))
+#   tmp_scores[index_start_ids, "index"] <- 1:length(index_start_ids)
+#   for (i in 1:nrow(tmp_scores)) {
+#     if (is.na(tmp_scores[i, "index"])) {
+#       tmp_scores[i, "index"] <- tmp_scores[i-1, "index"]
+#     }
+#   }
+#
+#   if (grepl("mse", score_name, fixed=TRUE)) {
+#     new_scores_df <- tmp_scores
+#   } else {
+#     prob_indices <- getProbIndices(
+#       tmp_scores[, paste0("ord", max_ord, "_score_lb")],
+#       tmp_scores[, paste0("ord", max_ord, "_score_up")])
+#     new_scores_df <- cbind(tmp_scores,
+#                            "prob_index"= prob_indices)
+#   }
+#
+#   unique_pag_ids <- getUniquePAGList(
+#     pag_list[new_scores_df$pag_list_id], key="amat")$ids
+#   new_scores_df$duplicated <- TRUE
+#   new_scores_df[unique_pag_ids, "duplicated"] <- FALSE
+#
+#   return(new_scores_df)
+# }
+#
+#
+# rankPAGListOLD <- function(pag_list, max_ord, scores_df=NULL,
+#                         score_name="ord_symm_diff_score",
+#                         score_len = 2,
+#                         score_labels = c("_score_lb", "_score_up")) {
+#
+#   if (is.null(scores_df)) {
+#     scores_df <- getPAGListScores(pag_list, score_name, score_len)
+#   }
+#
+#   ord_scores_cols_list <- lapply(scores_df$cur_ord_pag_scores, fromJSON)
+#   all_scores <- data.frame()
+#   for (i in seq_along(ord_scores_cols_list)) {
+#     cur_ord_scores <- ord_scores_cols_list[[i]]
+#     ord_ints <- c()
+#     for (j in 0:(max_ord)) {
+#       cur_int <- (cur_ord_scores[[as.character(j)]])
+#       if (is.null(cur_int) || length(cur_int) == 0) {
+#         cur_int <- rep(NA, score_len)
+#       }
+#       ord_ints <- c(ord_ints, cur_int)
+#     }
+#     all_scores <- rbind.data.frame(all_scores, ord_ints)
+#   }
+#   all_scores <- as.data.frame(all_scores)
+#
+#
+#   # last computed score is the product of all
+#   colnames(all_scores) <- c(
+#     paste0("ord", rep(0:max_ord, each=score_len),
+#            rep(score_labels, max_ord + 1)))
+#
+#   row.names(all_scores) <- NULL
+#
+#   if (grepl("mse", score_name, fixed=TRUE)) { # score_name:  ord_symm_diff_mse" or "mec_mse") {
+#     tmp_scores <- cbind.data.frame(
+#       all_scores[, c(seq(ncol(all_scores), 1, by=-1)), drop = FALSE],
+#       pag_list_id=1:nrow(all_scores))
+#     ordered_ids <- dplyr::arrange_all(tmp_scores)$pag_list_id
+#   } else {
+#     tmp_scores <- cbind.data.frame(
+#       all_scores[, c(seq(ncol(all_scores), 2, by=-2), seq(ncol(all_scores)-1, 1, by=-2)), drop = FALSE],
+#       pag_list_id=1:nrow(all_scores)
+#     )
+#     ordered_ids <- dplyr::arrange_all(tmp_scores, dplyr::desc)$pag_list_id
+#   }
+#
+#
+#   tmp_scores[, "violations"] <- scores_df$violation
+#   tmp_scores <- tmp_scores[ordered_ids, ]
+#
+#   # all_scores are sorted already...
+#   index_start_ids <- which(!duplicated(tmp_scores[,-which(colnames(tmp_scores) == "pag_list_id")]))
+#   tmp_scores[index_start_ids, "index"] <- 1:length(index_start_ids)
+#   for (i in 1:nrow(tmp_scores)) {
+#     if (is.na(tmp_scores[i, "index"])) {
+#       tmp_scores[i, "index"] <- tmp_scores[i-1, "index"]
+#     }
+#   }
+#
+#   if (grepl("mse", score_name, fixed=TRUE)) {
+#     new_scores_df <- tmp_scores
+#   } else {
+#     prob_indices <- getProbIndices(
+#       tmp_scores[, paste0("ord", max_ord, "_score_lb")],
+#       tmp_scores[, paste0("ord", max_ord, "_score_up")])
+#     new_scores_df <- cbind(tmp_scores,
+#                            "prob_index"= prob_indices)
+#   }
+#
+#   unique_pag_ids <- getUniquePAGList(pag_list, key="amat")$ids
+#   new_scores_df$duplicated <- TRUE
+#   new_scores_df[unique_pag_ids,"duplicated"] <- FALSE
+#
+#
+#   return(new_scores_df)
+# }
 
 getAllPotSepsetsXY <- function(x, y, amat.pag, m.max=Inf, verbose=TRUE) {
   done = FALSE
@@ -852,7 +1113,7 @@ getUniquePAGList <- function(pag_List, key="sepset") {
       ret
     })
     unique_ids <- which(!duplicated(sepsetResultsList))
-  } else {
+  } else { #key = "amat"
     amatList <- lapply(pag_List, function(x) {
       ret <- x$amat.pag
       rownames(ret) <- NULL
