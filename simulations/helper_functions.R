@@ -1,14 +1,16 @@
 getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
+  top_mec_score_up <- dcfci_out$mec_score_df[1,1]
+  top_mec_score_1mse <- dcfci_out$mec_score_df[1,2]
+
   index1_pags <- dcfci_out$allPAGList[
-    which(dcfci_out$mec_score_df$index == 1 &
-            dcfci_out$mec_score_df$duplicated == FALSE)]
+    which(dcfci_out$mec_score_df[,1] >= top_mec_score_up &
+          dcfci_out$mec_score_df[,2] >= top_mec_score_1mse &
+          dcfci_out$mec_score_df$violations == FALSE &
+          dcfci_out$mec_score_df$duplicated == FALSE)]
 
   probindex1_pags <- dcfci_out$allPAGList[
     which(dcfci_out$mec_score_df$prob_index == 1 &
             dcfci_out$mec_score_df$duplicated == FALSE)]
-
-  last_upscore <- colnames(dcfci_out$mec_score_df)[1]
-
 
   ntop <- length(index1_pags)
   nprobtop <- length(probindex1_pags)
@@ -64,6 +66,8 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
     cur_dcfci_metrics,
         truePAGInd=truePAGInd,
         truePAGProbInd = truePAGProbInd,
+        max_ord =  dcfci_out$order_processed,
+        max_reached = dcfci_out$exceeded_list_max,
         time_taken = time_taken,
         npags = length(dcfci_out$allPAGList),
         ntop = ntop,
@@ -73,6 +77,8 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
     cur_dcfci_metrics_min,
     truePAGInd=truePAGInd,
     truePAGProbInd = truePAGProbInd,
+    max_ord =  dcfci_out$order_processed,
+    max_reached = dcfci_out$exceeded_list_max,
     time_taken = time_taken,
     npags = length(dcfci_out$allPAGList),
     ntop = ntop,

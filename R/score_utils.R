@@ -481,8 +481,7 @@ getSymmDiffCITestResults <- function(cur_ord_pag_list, ord,
 
 getTopPagIds <- function(ord_pag_list_score_df,
                          mec_score_df = NULL,
-                         ord, sel_top, prob_sel_top,
-                         use_mse = FALSE) {
+                         ord, sel_top, prob_sel_top) {
 
   top_dc_pag_ids <- NULL
 
@@ -490,7 +489,7 @@ getTopPagIds <- function(ord_pag_list_score_df,
     # getting the top "sel_top" pags according to the ord_symm_diff PAG score.
     top_ord_score_pag_ids <- ord_pag_list_score_df[
       which(ord_pag_list_score_df$violation == FALSE &
-              ord_pag_list_score_df$duplicated == FALSE &
+              #ord_pag_list_score_df$duplicated == FALSE &
               ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_up")] > 0 &
               ord_pag_list_score_df$index <= sel_top), "pag_list_id"]
 
@@ -499,7 +498,7 @@ getTopPagIds <- function(ord_pag_list_score_df,
       # getting the top "sel_top" pags according to the mec PAG score.
       top_mec_score_pag_ids <- mec_score_df[
         which(mec_score_df$violation == FALSE &
-              mec_score_df$duplicated == FALSE &
+              #mec_score_df$duplicated == FALSE &
               mec_score_df$index <= sel_top), "pag_list_id"]
       # all top PAGs according to the available scores
       union_pag_ids <- union(top_ord_score_pag_ids, top_mec_score_pag_ids)
@@ -507,7 +506,7 @@ getTopPagIds <- function(ord_pag_list_score_df,
   } else if (prob_sel_top >= 1)  {
     top_ord_score_pag_ids <- ord_pag_list_score_df[
       which(ord_pag_list_score_df$violation == FALSE &
-              ord_pag_list_score_df$duplicated == FALSE &
+              #ord_pag_list_score_df$duplicated == FALSE &
               ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_up")] > 0 &
               ord_pag_list_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
 
@@ -515,7 +514,7 @@ getTopPagIds <- function(ord_pag_list_score_df,
     if (!is.null(mec_score_df)) {
       top_mec_pag_ids <- mec_score_df[
         which(mec_score_df$violation == FALSE &
-              mec_score_df$duplicated == FALSE &
+              #mec_score_df$duplicated == FALSE &
               mec_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
       union_pag_ids <- union(top_ord_score_pag_ids, top_mec_score_pag_ids)
     }
@@ -527,53 +526,38 @@ getTopPagIds <- function(ord_pag_list_score_df,
   # first for symmdiff_score_up
   min_ord_pag_score_up <- min(subset(
     ord_pag_list_score_df, pag_list_id %in% union_pag_ids)[, paste0("ord", ord, "_symmdiff_score_up")])
-  if (use_mse) {
-    # then  for symmdiff_score_1-mse
-    min_ord_pag_score_1mse <- min(subset(
-      ord_pag_list_score_df, pag_list_id %in% union_pag_ids)[, paste0("ord", ord, "_symmdiff_score_1-mse")])
-  }
+  # then  for symmdiff_score_1-mse
+  min_ord_pag_score_1mse <- min(subset(
+    ord_pag_list_score_df, pag_list_id %in% union_pag_ids)[, paste0("ord", ord, "_symmdiff_score_1-mse")])
 
   if (!is.null(mec_score_df)) {
     # first for mec_score_up
     min_mec_score_up <- min(subset(
       mec_score_df, pag_list_id %in% union_pag_ids)[, paste0("ord", ord, "_mec_score_up")])
-    if (use_mse) {
-      # then for mec_score_1-mse
-      min_mec_score_1mse <- min(subset(
-        mec_score_df, pag_list_id %in% union_pag_ids)[, paste0("ord", ord, "_mec_score_1-mse")])
-    }
+    # then for mec_score_1-mse
+    min_mec_score_1mse <- min(subset(
+      mec_score_df, pag_list_id %in% union_pag_ids)[, paste0("ord", ord, "_mec_score_1-mse")])
   }
 
   # Now, we select all PAGs that are better than such selected PAGs in any of the available scores
   top_dc_pag_ids <- ord_pag_list_score_df[
     which(ord_pag_list_score_df$violation == FALSE &
-            ord_pag_list_score_df$duplicated == FALSE &
-            ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_up")] >=
-            min_ord_pag_score_up), "pag_list_id"]
-
-  if (use_mse) {
-    top_dc_pag_ids <- union(top_dc_pag_ids, ord_pag_list_score_df[which(
-    ord_pag_list_score_df$violation == FALSE &
-      ord_pag_list_score_df$duplicated == FALSE &
-      ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_1-mse")] >=
-      min_ord_pag_score_1mse), "pag_list_id"])
-  }
+            #ord_pag_list_score_df$duplicated == FALSE &
+            ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_up")] >= min_ord_pag_score_up &
+            ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_1-mse")] >= min_ord_pag_score_1mse),
+    "pag_list_id"]
 
   if (!is.null(mec_score_df)) {
     top_dc_pag_ids <- union(top_dc_pag_ids, mec_score_df[which(
       mec_score_df$violation == FALSE &
-        mec_score_df$duplicated == FALSE &
-        mec_score_df[, paste0("ord", ord, "_mec_score_up")] >=
-        min_mec_score_up), "pag_list_id"])
-    if (use_mse) {
-      top_dc_pag_ids <- union(top_dc_pag_ids, mec_score_df[which(
-      mec_score_df$violation == FALSE &
-        mec_score_df$duplicated == FALSE &
-        mec_score_df[, paste0("ord", ord, "_mec_score_1-mse")] >=
-        min_mec_score_1mse), "pag_list_id"])
-    }
+      #mec_score_df$duplicated == FALSE &
+      mec_score_df[, paste0("ord", ord, "_mec_score_up")] >= min_mec_score_up &
+      mec_score_df[, paste0("ord", ord, "_mec_score_1-mse")] >= min_mec_score_1mse),
+    "pag_list_id"])
   }
 
+  top_dc_pag_ids <- subset(ord_pag_list_score_df, pag_list_id %in% top_dc_pag_ids &
+                             duplicated == FALSE)$pag_list_id
   return(top_dc_pag_ids)
 }
 

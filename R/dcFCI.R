@@ -265,7 +265,6 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                   run_parallel = TRUE, allowNewTests=TRUE,
                   list.max = 500,
                   pH0ThreshMin=0.5, pH0ThreshMax=1,
-                  use_mse = FALSE,
                   log_folder = file.path(getwd(), "tmp", "logs")) {
 
   ord_pag_score = "ord_symm_diff_score"
@@ -441,7 +440,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                 citestResults=citestResults))
   }
 
-  time_elapsed <- system.time({
+  elapsed_time <- system.time({
     rules = rep(TRUE, 10)
     p <- length(labels)
 
@@ -519,6 +518,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     futile.logger::flog.info(paste("Initializing..."), name = "dcfci_log")
 
 
+    exceeded_list_max <- FALSE
     while (ord <= min(m.max, p-2)) {
 
       prev_cur_ord_pag_list <- cur_ord_pag_list
@@ -599,6 +599,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
           cat("curord:", ord, "; length of toProcessPAGList: ", length(toProcessPAGList), "\n")
         if (length(toProcessPAGList) > list.max) {
           cat("ERROR: The maximum list size of", list.max, "has been exceeded.\n")
+          exceeded_list_max <- TRUE
           has_errors <- TRUE
         }
       }
@@ -703,11 +704,9 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
       #lapply(pag_List, function(x) {(x$mec)})
       #lapply(pag_List, function(x) {(x$scores)})
 
-      #TODO: should I really continue with all duplicated, equally scored amat?
       top_dc_pag_ids <- getTopPagIds(ord_pag_list_score_df,
-                                     mec_score_df,
-                                     ord, sel_top, prob_sel_top,
-                                     use_mse = use_mse)
+                                     mec_score_df =mec_score_df,
+                                     ord, sel_top, prob_sel_top)
 
       # subset(mec_score_df, pag_list_id %in% top_dc_pag_ids)
       # subset(ord_pag_list_score_df, pag_list_id %in% top_dc_pag_ids)
@@ -766,13 +765,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
       top_ids <- which(mec_score_df$index <= sel_top &
                          mec_score_df$violations == FALSE &
                          mec_score_df$duplicated == FALSE)
-      top_mec_score_up <- mec_score_df[top_ids, 1]
-      top_ids <- which(
-        mec_score_df$violations == FALSE &
-          mec_score_df$duplicated == FALSE &
-          mec_score_df[, paste0("ord", ord-1, "_mec_score_up")] >= top_mec_score_up)
     }
-
 
     top_dcPAGs <- pag_List[top_ids]
     top_scoresDF <- mec_score_df[top_ids,]
@@ -784,7 +777,9 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
               mec_score_df=mec_score_df,
               ord_pag_list_score_df=ord_pag_list_score_df,
               diff_citestResults=diff_citestResults,
-              time_elapsed=as.numeric(time_elapsed)[3]))
+              elapsed_time=as.numeric(elapsed_time)[3],
+              exceeded_list_max=exceeded_list_max,
+              order_processed=ord-1))
 }
 
 getProbIndices <- function(min_scores, max_scores) {

@@ -21,7 +21,7 @@ if (run_parallel) {
   n_cores <- 12
   # plan("multisession", workers = n_cores)
   plan("multicore", workers = n_cores) # forking
-  # plan("cluster", workers = n_cores)
+  #plan("cluster", workers = n_cores)
 }
 
 
@@ -696,7 +696,7 @@ if (run_sims) {
             # Running dcFCI #
             #################
 
-            sel_top_list <- c(1) #,2,3)
+            sel_top_list <- c(1,2) #,3)
             prob_sel_top = FALSE
             pH0ThreshMin = 0.3
 
@@ -723,13 +723,13 @@ if (run_sims) {
                 }
               }
 
-              redo_date <- as.POSIXct("2026-01-15 21:00:00", tz="CET")
+              redo_date <- as.POSIXct("2026-01-17 15:00:00", tz="CET")
 
               if (!restore_files || !file.exists(dcfci_out_file) ||
                   (N < 1000 && as.POSIXct(file.info(dcfci_out_file)$ctime) < redo_date)) {
                 # m.max = Inf; fixedGaps = NULL; fixedEdges = NULL;
                 # verbose = 2; sel_top = 1; prob_sel_top = FALSE; run_parallel = TRUE;
-                # allowNewTests=TRUE; pH0ThreshMin=0.3; pH0ThreshMax=1; list.max = 1500
+                # allowNewTests=TRUE; pH0ThreshMin=0.3; pH0ThreshMax=1; list.max = 500;
                 # log_folder = file.path(getwd(), "tmp", "logs")
 
                 start_time <- proc.time()
@@ -740,7 +740,7 @@ if (run_sims) {
                                    prob_sel_top = FALSE,
                                    run_parallel = TRUE,
                                    allowNewTests=TRUE,
-                                   list.max = 1500,
+                                   list.max = 1000,
                                    pH0ThreshMin=pH0ThreshMin,
                                    pH0ThreshMax = 1,
                                    log_folder = file.path(dcfci_output_folder, "tmp", "logs"))
