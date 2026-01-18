@@ -20,8 +20,8 @@ if (run_parallel) {
   require(future.apply)
   n_cores <- 12
   # plan("multisession", workers = n_cores)
-  plan("multicore", workers = n_cores) # forking
-  #plan("cluster", workers = n_cores)
+  # plan("multicore", workers = n_cores) # forking
+  plan("cluster", workers = n_cores)
 }
 
 
@@ -31,8 +31,13 @@ if (run_parallel) {
 #
 # data_type = "mixed" #  # option in {continuous, mixed}
 # N <- 200
-# pag_id <- 1
-# sim <- 10
+# pag_id <- 2
+# sim <- 30
+
+# data_type = "mixed" #  # option in {continuous, mixed}
+# N <- 200
+# pag_id <- 5
+# sim <- 12
 
 # dcfci_metrics[which(dcfci_metrics$shd > 0 &
 #   dcfci_metrics$mec_score.2 == true_pag_metrics$mec_frechetUB),]
@@ -90,7 +95,7 @@ if (run_sims) {
   # Running Simulations #
   #######################
 
-  for (data_type in c("mixed", "continuous")) {
+  for (data_type in c("mixed")) { #, "continuous")) {
     output_folder <- paste0("../dcFCI_Simulations/",
                             data_type, "/")
 
@@ -111,7 +116,7 @@ if (run_sims) {
       }
       # Note: since all files are saved in the end, they all have the same
       # number of rows in case of crash.
-      n_processed = dim(subset(dcfci_metrics, sel_top == 2))[1]
+      n_processed = dim(subset(dcfci_metrics, sel_top == 1))[1]
       #n_processed = dim(fci_metrics)[1]
     } else {
       true_bic <- data.frame()
@@ -699,6 +704,7 @@ if (run_sims) {
             sel_top_list <- c(1,2) #,3)
             prob_sel_top = FALSE
             pH0ThreshMin = 0.3
+            exceeded_list_max <- FALSE
 
             for (sel_top in sel_top_list) {
               # dcFCI4 - see 4t results - check_structure = FALSE, with sel_top 1 & 2, prob_sel_top = 0,
@@ -725,13 +731,23 @@ if (run_sims) {
 
               redo_date <- as.POSIXct("2026-01-17 15:00:00", tz="CET")
 
+              if (exceeded_list_max) {
+                if (file.exists(dcfci_out_file) &&
+                    (N > 1000 || as.POSIXct(file.info(dcfci_out_file)$ctime) >= redo_date)) {
+                  load(dcfci_out_file)
+                } else {
+                  break
+                }
+              }
+
+
               if (!restore_files || !file.exists(dcfci_out_file) ||
                   (N < 1000 && as.POSIXct(file.info(dcfci_out_file)$ctime) < redo_date)) {
                 # m.max = Inf; fixedGaps = NULL; fixedEdges = NULL;
                 # verbose = 2; sel_top = 1; prob_sel_top = FALSE; run_parallel = TRUE;
                 # allowNewTests=TRUE; pH0ThreshMin=0.3; pH0ThreshMax=1; list.max = 500;
                 # log_folder = file.path(getwd(), "tmp", "logs")
-
+                # sapply(list.files("./R", full.names = T), source)
                 start_time <- proc.time()
                 dcfci_out <- dcFCI(suffStat, indepTest, labels, alpha,
                                    m.max = Inf,
@@ -743,6 +759,7 @@ if (run_sims) {
                                    list.max = 1000,
                                    pH0ThreshMin=pH0ThreshMin,
                                    pH0ThreshMax = 1,
+                                   order_by_mse = FALSE,
                                    log_folder = file.path(dcfci_output_folder, "tmp", "logs"))
                 end_time <- proc.time()
                 elapsed_time <- end_time - start_time
@@ -760,6 +777,10 @@ if (run_sims) {
                   dcfci_out$elapsed_time <- dcfci_out_out$time_taken
                   save(dcfci_out, file=dcfci_out_file)
                 }
+              }
+
+              if (dcfci_out$exceeded_list_max) {
+                exceeded_list_max = TRUE
               }
 
               eval_dat <- if (data_type == "continuous") dat else NULL

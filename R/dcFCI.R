@@ -265,6 +265,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                   run_parallel = TRUE, allowNewTests=TRUE,
                   list.max = 500,
                   pH0ThreshMin=0.5, pH0ThreshMax=1,
+                  order_by_mse = FALSE,
                   log_folder = file.path(getwd(), "tmp", "logs")) {
 
   ord_pag_score = "ord_symm_diff_score"
@@ -695,11 +696,13 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
 
 
       ord_pag_list_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
-                                            score_type = "pag_list")
+                                            score_type = "pag_list",
+                                            order_by_mse = order_by_mse)
 
       # mec_score is the MEC-targetted pag score
       mec_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
-                                  score_type = "mec")
+                                  score_type = "mec",
+                                  order_by_mse = order_by_mse)
 
       #lapply(pag_List, function(x) {(x$mec)})
       #lapply(pag_List, function(x) {(x$scores)})
@@ -810,7 +813,8 @@ getProbIndices <- function(min_scores, max_scores) {
 # ord_symm_diff_up, ord_symm_diff_mse, ord_union_up, ord_union_mse
 # ord_symm_diff_low, ord_union_low
 rankPAGList <- function(pag_list, max_ord,
-                        score_type = "pag_list") {
+                        score_type = "pag_list",
+                        order_by_mse = FALSE) {
 
   score_names=c("ord_symm_diff_score", "ord_union_mec_score")
   score_short_names = c("symmdiff", "union")
@@ -864,13 +868,18 @@ rankPAGList <- function(pag_list, max_ord,
     }
   }
 
+  top_labels <- c("score_up", "score_1-mse")
+  if (order_by_mse) {
+    top_labels <- c("score_1-mse", "score_up")
+  }
+
   ordered_labels <- c()
   for (cur_ord in seq(max_ord,0,-1)) {
     for (score_short_name in score_short_names) {
       ordered_labels <- c(ordered_labels,
                         paste0("ord", cur_ord,
                                paste0("_", score_short_name, "_",
-                                      c("score_up", "score_1-mse"))))
+                                      top_labels)))
     }
   }
   for (cur_ord in seq(max_ord,0,-1)) {
