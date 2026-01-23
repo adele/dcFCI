@@ -4,7 +4,7 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
 
   index1_pags <- dcfci_out$allPAGList[
     which(dcfci_out$mec_score_df[,1] >= top_mec_score_up &
-          dcfci_out$mec_score_df[,2] >= top_mec_score_1mse &
+          #dcfci_out$mec_score_df[,2] >= top_mec_score_1mse &
           dcfci_out$mec_score_df$violations == FALSE &
           dcfci_out$mec_score_df$duplicated == FALSE)]
 
@@ -39,7 +39,7 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
       dcfci_top_pag$mec$mec_mse <- getNormalizedSquaredL2DistanceFromCertainty(mec_probs)
     }
 
-    trivial_score <- getStraightforwardPAGScore(est.amat.pag, suffStat$citestResults)
+    trivial_score <- getStraightforwardPAGScore(est.amat.pag, citestResults)
     cur_dcfci_metrics <- rbind.data.frame(cur_dcfci_metrics,
                                           cbind(dcfci_metrics_partial,
                                                 mec_score = t(dcfci_top_pag$mec$mec_score), # not comparable
@@ -61,6 +61,9 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
     } else {
       as.numeric(dcfci_out$elapsed_time)[3]
     }
+
+  if (is.null(dcfci_out$order_processed)) dcfci_out$order_processed <- NA
+  if (is.null(dcfci_out$exceeded_list_max)) dcfci_out$exceeded_list_max <- NA
 
   cur_dcfci_metrics <- cbind.data.frame(
     cur_dcfci_metrics,

@@ -13,7 +13,7 @@ source("./simulations/helper_functions.R")
 source("./R/metrics_PAG.R")
 
 # If running in parallel:
-run_parallel = TRUE
+run_parallel = FALSE #TRUE
 
 if (run_parallel) {
   require(doFuture)
@@ -25,29 +25,12 @@ if (run_parallel) {
 }
 
 
-# ############
-# # To check #
-# ############
-#
-# data_type = "mixed" #  # option in {continuous, mixed}
-# N <- 200
-# pag_id <- 2
-# sim <- 30
-
-# data_type = "mixed" #  # option in {continuous, mixed}
-# N <- 200
-# pag_id <- 5
-# sim <- 12
-
-# dcfci_metrics[which(dcfci_metrics$shd > 0 &
-#   dcfci_metrics$mec_score.2 == true_pag_metrics$mec_frechetUB),]
-
 #########################
 # Simulation Parameters #
 #########################
 
 sim_ids = 1:30
-sample_sizes = c(200, 500) #, 1000, 5000, 10000, 50000)
+sample_sizes = c(200, 500, 1000, 5000, 10000, 50000)
 
 
 sim_true_pags_file <- paste0("./simulations/random_p5_true_pags_list.RData")
@@ -63,14 +46,14 @@ debug = FALSE
 ####################
 
 
-run_sims = TRUE # set to FALSE if files are already processed.
+run_sims = FALSE # set to FALSE if files are already processed.
 
 # For mixed data types
 # Available in R
-runFCI = FALSE # Fast Causal Inference (FCI) - 2008
-runCFCI = FALSE # Conservative FCI (cFCI) - 2012, 2014 (?)
-runMIICSS = FALSE #  MIIC_search&score (MIICSS) 2025
-runDCFCI = TRUE # Data-Compatible FCI (dcFCI) -- our work
+runFCI = FALSE # FALSE # Fast Causal Inference (FCI) - 2008
+runCFCI = FALSE # FALSE # Conservative FCI (cFCI) - 2012, 2014 (?)
+runMIICSS = FALSE # FALSE #  MIIC_search&score (MIICSS) 2025
+runDCFCI = TRUE # FALSE # Data-Compatible FCI (dcFCI) -- our work
 
 # For only continuous (gaussian) variables
 # Available in R
@@ -81,8 +64,8 @@ runMAGSL = FALSE # MAG Structure Learning - 2021
 runGPS = FALSE  # Greedy PAG Search (GPS) - 2022
 
 
-runTrueMetrics = TRUE
-runOrdMECFaithfDegree <- TRUE
+runTrueMetrics = FALSE
+runOrdMECFaithfDegree <- FALSE
 
 run_plots = FALSE
 
@@ -95,18 +78,10 @@ if (run_sims) {
   # Running Simulations #
   #######################
 
-  for (data_type in c("mixed")) { #, "continuous")) {
-    output_folder <- paste0("../dcFCI_Simulations/",
+  for (data_type in c("mixed", "continuous")) {
+  #for (data_type in c()) {
+      output_folder <- paste0("../dcFCI_Simulations/",
                             data_type, "/")
-
-    if (data_type == "continuous") {
-      runTrueMetrics = FALSE
-      runOrdMECFaithfDegree <- FALSE
-    } else {
-      runTrueMetrics = TRUE
-      runOrdMECFaithfDegree <- TRUE
-    }
-
     n_processed = 0
     if (check_processed) {
       metrics_files <- list.files(output_folder,
@@ -212,9 +187,6 @@ if (run_sims) {
           if (restore_suffStat && file.exists(suffStat_file)) {
             load(suffStat_file)
           } else {
-            #dat$D <- factor(dat$D)
-            #dat$E <- factor(dat$E)
-
             vars_names <- colnames(true.amat.pag) # only observed variables
             covs_names = c()
             indepTest <- mixedCITest
@@ -707,9 +679,6 @@ if (run_sims) {
             exceeded_list_max <- FALSE
 
             for (sel_top in sel_top_list) {
-              # dcFCI4 - see 4t results - check_structure = FALSE, with sel_top 1 & 2, prob_sel_top = 0,
-              # dcFCI5 - see 5t results - using mec_score, check_structure = FALSE, with sel_top 1 & 2, prob_sel_top = 0,
-
               if (data_type == "continuous") {
                 dcfci_output_folder <- paste0(output_folder_sim, "dcFCI6/", "top", sel_top, "/")
               } else {
@@ -729,11 +698,18 @@ if (run_sims) {
                 }
               }
 
-              redo_date <- as.POSIXct("2026-01-17 15:00:00", tz="CET")
+              # redo_date <- as.POSIXct("2026-01-17 15:00:00", tz="CET")
+              # check_date <- as.POSIXct("2026-01-19 00:00:00", tz="CET")
+              # if (!file.exists(dcfci_out_file) ||
+              #     (as.POSIXct(file.info(dcfci_out_file)$mtime) < check_date)) {
+              #     stop("Check: Not processed yet")
+              # } else {
+              #   next
+              # }
 
               if (exceeded_list_max) {
-                if (file.exists(dcfci_out_file) &&
-                    (N > 1000 || as.POSIXct(file.info(dcfci_out_file)$ctime) >= redo_date)) {
+                if (file.exists(dcfci_out_file)) {
+                    # && (N > 1000 || as.POSIXct(file.info(dcfci_out_file)$mtime) >= redo_date)) {
                   load(dcfci_out_file)
                 } else {
                   break
@@ -741,13 +717,15 @@ if (run_sims) {
               }
 
 
-              if (!restore_files || !file.exists(dcfci_out_file) ||
-                  (N < 1000 && as.POSIXct(file.info(dcfci_out_file)$ctime) < redo_date)) {
+              if (!restore_files || !file.exists(dcfci_out_file)
+                  # || (N < 1000 && as.POSIXct(file.info(dcfci_out_file)$mtime) < redo_date)
+                  ) {
                 # m.max = Inf; fixedGaps = NULL; fixedEdges = NULL;
                 # verbose = 2; sel_top = 1; prob_sel_top = FALSE; run_parallel = TRUE;
                 # allowNewTests=TRUE; pH0ThreshMin=0.3; pH0ThreshMax=1; list.max = 500;
                 # log_folder = file.path(getwd(), "tmp", "logs")
                 # sapply(list.files("./R", full.names = T), source)
+
                 start_time <- proc.time()
                 dcfci_out <- dcFCI(suffStat, indepTest, labels, alpha,
                                    m.max = Inf,
@@ -779,14 +757,15 @@ if (run_sims) {
                 }
               }
 
-              if (dcfci_out$exceeded_list_max) {
+              if (!is.null(dcfci_out$exceeded_list_max) &&
+                  dcfci_out$exceeded_list_max) {
                 exceeded_list_max = TRUE
               }
 
               eval_dat <- if (data_type == "continuous") dat else NULL
               metrics_out <- getDCFCIMetrics(dcfci_out, eval_dat,
                                              suffStat$citestResults, true.amat.pag)
-              cat("\n dcFCI SHD: ", metrics_out$dcfci_metrics$shd, "\n")
+              cat("\n dcFCI SHD: ", metrics_out$dcfci_metrics$shd, "min: ", metrics_out$dcfci_metrics_min$shd, "\n")
               cat("\n dcFCI mec_score_up: ", metrics_out$dcfci_metrics$mec_score.2, "\n")
               if (runTrueMetrics) {
                 cat("\n true mec_score_up: ", true_mec_score$frechetUB, "\n")
@@ -803,23 +782,9 @@ if (run_sims) {
                                          cbind(data_type=data_type, N=N, pag_id=pag_id, sim=sim, eff_size=eff_size_str,
                                                sel_top = sel_top, prob_sel_top = prob_sel_top,
                                                pH0ThreshMin=pH0ThreshMin,
-                                               data.frame(metrics_out$dcfci_metrics)))
+                                               data.frame(metrics_out$dcfci_metrics_min)))
             }
           }
-
-
-          # if (runFCI && runCFCI && runDCFCI) {
-          #   cat("SHD\n")
-          #   print(tail(cbind.data.frame(fci=fci_metrics$shd, cfci=cfci_metrics$shd, #bccd=bccd_metrics$shd,
-          #           dcfci1=dcfci_metrics[[1]]$shd, dcfci2=dcfci_metrics[[2]]$shd)))
-          #   cat("FDR\n")
-          #   print(tail(cbind.data.frame(fci=fci_metrics$fdr, cfci=cfci_metrics$fdr, #bccd=bccd_metrics$fdr,
-          #     dcfci1=dcfci_metrics[[1]]$fdr, dcfci2=dcfci_metrics[[2]]$fdr)))
-          #   cat("FOR\n")
-          #   print(tail(cbind.data.frame(fci=fci_metrics$fomr, cfci=cfci_metrics$fomr, #bccd=bccd_metrics$fomr,
-          #     dcfci1=dcfci_metrics[[1]]$fomr, dcfci2=dcfci_metrics[[2]]$fomr)))
-          # }
-
 
           #######################
           # Saving result files #
@@ -877,6 +842,24 @@ if (run_sims) {
 }
 
 
+#############################
+
+library(xtable)
+library(RColorBrewer)
+
+sim_ids = 1:30
+sample_sizes = c(200, 500) #, 1000, 5000, 10000, 50000)
+
+
+sim_true_pags_file <- paste0("./simulations/random_p5_true_pags_list.RData")
+load(sim_true_pags_file)
+#lapply(true_pags_list, renderAG)
+
+pag_ids <- 1:length(true_pags_list)
+
+#data_type = "continuous"
+data_type = "mixed" #
+
 
 run_plots <- FALSE
 if (run_plots) {
@@ -892,16 +875,6 @@ if (run_plots) {
   }
 
 
-  #data_type = "continuous"
-  data_type = "mixed" #
-
-
-  sel_top = 1
-
-  # How much do I lose not checking the top 2 in terms of finding the true PAG?
-  # What is the strategy? Check boths and check how the top scored PAGs change?
-
-
   output_folder <- paste0("../dcFCI_Simulations/", data_type, "/")
 
   metrics_files <- list.files(output_folder,
@@ -910,118 +883,36 @@ if (run_plots) {
     load(paste0(output_folder, metric_file))
   }
 
-#
-#   if (data_type == "continuous") {
-#     load(paste0(output_folder, "true_bic3.RData"))
-#     load(paste0(output_folder, "bccd_metrics3t.RData"))
-#     load(paste0(output_folder, "dcd_metrics3t.RData"))
-#     load(paste0(output_folder, "magsl_metrics3t.RData"))
-#     load(paste0(output_folder, "gps_metrics3t.RData"))
-#   }
-#   load(paste0(output_folder, "faithf_degree3.RData"))
-#   load(paste0(output_folder, "rmec_faithf_degree3.RData"))
-#   load(paste0(output_folder, "true_metrics3.RData"))
-#   load(paste0(output_folder, "fci_metrics3t.RData"))
-#   load(paste0(output_folder, "cfci_metrics3t.RData"))
-
-
- for (sel_top in 1:2) {
-
-  dcfci_metrics8 <- data.frame()
-  dcfci_metrics_min8 <- data.frame()
-  improved_ids <- c()
-  worsened_ids <- c()
-
-
-  # Loading dcfci_metrics2
-  load(paste0(output_folder, "dcfci_metrics6t_sel_top_", sel_top, ".RData"))
-  dcfci_metrics6 <- dcfci_metrics2
-  # Loading dcfci_metrics_min2
-  load(paste0(output_folder, "dcfci_metrics_min6t_sel_top_", sel_top, ".RData"))
-  dcfci_metrics_min6 <- dcfci_metrics_min2
-
-  # Loading dcfci_metrics2
-  load(paste0(output_folder, "dcfci_metrics7t_sel_top_", sel_top, ".RData"))
-  dcfci_metrics7 <- dcfci_metrics2
-  # Loading dcfci_metrics_min2
-  load(paste0(output_folder, "dcfci_metrics_min7t_sel_top_", sel_top, ".RData"))
-  dcfci_metrics_min7 <- dcfci_metrics_min2
-
-  for (i in 1:1200) {
-    if (is.na(dcfci_metrics7$shd[i]) ||
-        dcfci_metrics_min6$shd[i] < dcfci_metrics_min7$shd[i]) {
-      if (!is.na(dcfci_metrics_min7$shd[i])) {
-        worsened_ids <- c(worsened_ids, i)
-      }
-      dcfci_metrics8 <- rbind(dcfci_metrics8,
-                                  dcfci_metrics6[i, , drop=FALSE])
-      dcfci_metrics_min8 <- rbind(dcfci_metrics_min8,
-                                      dcfci_metrics_min6[i, , drop=FALSE])
-    } else {
-      if (dcfci_metrics_min6$shd[i] > dcfci_metrics_min7$shd[i]) {
-        improved_ids <- c(improved_ids, i)
-        print(c(dcfci_metrics_min6$shd[i], dcfci_metrics_min7$shd[i]))
-      }
-      dcfci_metrics8 <- rbind(dcfci_metrics8,
-                                  dcfci_metrics7[i, , drop=FALSE])
-      dcfci_metrics_min8 <- rbind(dcfci_metrics_min8,
-                                      dcfci_metrics_min7[i, , drop=FALSE])
-    }
-  }
-  dcfci_metrics2 <- dcfci_metrics8
-  dcfci_metrics_min2 <- dcfci_metrics_min8
-
-  save(dcfci_metrics2, file = paste0(output_folder,
-                                     "dcfci_metrics8t_sel_top_", sel_top, ".RData"))
-  save(dcfci_metrics_min2, file = paste0(output_folder,
-                                     "dcfci_metrics_min8t_sel_top_", sel_top, ".RData"))
- }
-
-
-  sel_top = 1
-  # Loading dcfci_metrics2
-  load(paste0(output_folder, "dcfci_metrics8t_sel_top_", sel_top, ".RData"))
-  dcfci_metrics_k1 <- dcfci_metrics2
-  # Loading dcfci_metrics_min2
-  load(paste0(output_folder, "dcfci_metrics_min8t_sel_top_", sel_top, ".RData"))
-  dcfci_metrics_k1_min <- dcfci_metrics_min2
-
-  sel_top = 2
-  # Loading dcfci_metrics2
-  load(paste0(output_folder, "dcfci_metrics8t_sel_top_", sel_top, ".RData"))
-  dcfci_metrics_k2 <- dcfci_metrics2
-  # Loading dcfci_metrics_min2
-  load(paste0(output_folder, "dcfci_metrics_min8t_sel_top_", sel_top, ".RData"))
-  dcfci_metrics_k2_min <- dcfci_metrics_min2
-
-  sel_top = 2
-  for (sel_top in c(1,2)) {
-
-  # Loading dcfci_metrics2
-  load(paste0(output_folder, "dcfci_metrics8t_sel_top_", sel_top, ".RData"))
-
-  # Loading dcfci_metrics_min2
-  load(paste0(output_folder, "dcfci_metrics_min8t_sel_top_", sel_top, ".RData"))
-
-  dcfci_metrics <- dcfci_metrics_min2
 
   dcfci_metrics$pag_id <- as.numeric(dcfci_metrics$pag_id)
   dcfci_metrics$N <- as.numeric(dcfci_metrics$N)
   length_agg <- aggregate(dcfci_metrics[, "shd"],
-                          by = as.list(dcfci_metrics[, c("N", "pag_id")]), FUN=length)
+                          by = as.list(dcfci_metrics[, c("N", "pag_id", "sel_top")]), FUN=length)
 
-  # checking if the execution for all 30 sims/pag for all 10 pags are done
+  # checking if the execution for all 30 sims in each sel_top (1 and 2)
+  # for all 10 pags are done
   good_pag_ids <- as.numeric(names(which(table(
-    subset(length_agg, x == 30)$pag_id) == length(sample_sizes))))
-  length(good_pag_ids)
+    subset(length_agg, x == 30)$pag_id) == length(sample_sizes) * 2))) # 2 is the length of sel_tops
+  n_good_pags <- length(good_pag_ids)
+  if (n_good_pags != 10) {
+    stop("Simulations is not complete! \n")
+  }
+
+
+  dcfci_metrics_k1 <- subset(dcfci_metrics, sel_top == 1)
+  dcfci_metrics_k1_min <- subset(dcfci_metrics_min, sel_top == 1)
+
+
+  dcfci_metrics_k2 <- subset(dcfci_metrics, sel_top == 2)
+  dcfci_metrics_k2_min <- subset(dcfci_metrics_min, sel_top == 2)
 
 
   ########################
   # Specifying baselines #
   ########################
 
-  methods = c("fci", "cfci")
-  methods_labels <- c("FCI", "cFCI")
+  methods = c("fci", "cfci", "miicss")
+  methods_labels <- c("FCI", "cFCI", "MIICSS")
   if (data_type == "continuous") {
     methods <- c(methods, "bccd", "dcd",
                  "magsl",
@@ -1030,41 +921,40 @@ if (run_plots) {
                         "MAGSL",
                         "GPS")
   }
-  methods <- c(methods, "dcfci")
-  methods_labels <- c(methods_labels, "dcFCI")
+  methods <- c(methods, "dcfci_k1", "dcfci_k2")
+  methods_labels <- c(methods_labels, "dcFCI_1", "dcFCI_2")
 
-  metrics_labels <- c("SHD", "FDR", "FOR", "Compatibility Score", "Time Taken")
-  metrics = c("shd", "fdr", "fomr", "trivial_score.2", "time_taken")
+  metrics_labels <- c("SHD", "FDR", "FOR", "PAG Score", "MEC-Targeted PAG Score",  "Time Taken")
+  metrics = c("shd", "fdr", "fomr", "sf_frechetUB", "mec_frechetUB", "time_taken")
   if (data_type == "continuous") {
     metrics_labels <- c(metrics_labels, "BIC", "BIC Distance")
     metrics <- c(metrics, "bic", "bic_dist")
   }
 
-  library(RColorBrewer)
+
   n <- length(methods_labels)
   method_colors = brewer.pal(n = n, name = "Set3")
 
 
-  figures_folder <- paste0(output_folder, "figures_final8/")
+  figures_folder <- paste0(output_folder, "rev01_20260121_figures/")
 
   if (!file.exists(figures_folder)) {
     dir.create(figures_folder, recursive = TRUE)
   }
 
 
-  tables_folder <- paste0(output_folder, "tables_final8/")
+  tables_folder <- paste0(output_folder, "rev01_20260121_tables/")
 
   if (!file.exists(tables_folder)) {
     dir.create(tables_folder, recursive = TRUE)
   }
 
-  methods_labels_k1k2 <- c(methods_labels[1:(length(methods_labels)-1)],
-                           "dcFCI_1", "dcFCI_2")
 
 
   ######################################################################
   # Show that we can obtain the true PAG even without adj faithfulness #
   ######################################################################
+  #TODO: (2026-01-21: faithfulness is no longer evaluated)
 
   # What is the shd when faithfulness = 1? And other types of faithfulness?
   # What is the faithfulness of those with shd = 0, and with fdr = 0
@@ -1075,7 +965,7 @@ if (run_plots) {
   # and then how is the prop of recovery rate in each of them.
   true_faith_df <- data.frame()
   for(cur_N in sample_sizes) {
-    cur_N_ids <- which(true_metrics$N == cur_N)
+    cur_N_ids <- which(true_pag_metrics$N == cur_N)
 
     all_metric_lists <- list(fci_metrics[cur_N_ids, , drop = FALSE],
                              cfci_metrics[cur_N_ids, , drop = FALSE])
@@ -1092,12 +982,12 @@ if (run_plots) {
     all_metric_lists[[length(all_metric_lists) + 1]] <-  dcfci_metrics_k2_min[cur_N_ids, , drop = FALSE]
 
     cur_faithf_degree <- subset(faithf_degree, N == cur_N)
-    cur_true_metrics <- subset(true_metrics, N == cur_N)
+    cur_true_pag_metrics <- subset(true_pag_metrics, N == cur_N)
     cur_rmec_faithf_degree <- subset(rmec_faithf_degree, N == cur_N)
 
     f_faithf_ids <- which(cur_faithf_degree$f_dep.2 / cur_faithf_degree$f_dep.3 == 1 &
                             cur_faithf_degree$f_indep.2 / cur_faithf_degree$f_indep.3 == 1)
-    b_faithf_ids <- which(cur_true_metrics$trivial_score.2 >= 0.5)
+    b_faithf_ids <- which(cur_true_pag_metrics$trivial_score.2 >= 0.5)
     #a_faithf_ids <- which(cur_faithf_degree$fskel_dep.2 / cur_faithf_degree$fskel_dep.3 == 1 &
     #                      cur_faithf_degree$fskel_indep.2 / cur_faithf_degree$fskel_indep.3 == 1)
     rmec_faithf_ids <- which(cur_rmec_faithf_degree$`0_mec_score2` >= 0.5 &
@@ -1106,7 +996,7 @@ if (run_plots) {
                                cur_rmec_faithf_degree$`3_mec_score2` >= 0.5 )
     #mec_faithf_ids <- which(cur_rmec_faithf_degree$`0_mec_score2` >= 0.5)
 
-    u_ids <- setdiff(1:nrow(cur_true_metrics),
+    u_ids <- setdiff(1:nrow(cur_true_pag_metrics),
                          unique(c(f_faithf_ids, b_faithf_ids, rmec_faithf_ids)))
 
     for (metrics_list in all_metric_lists) {
@@ -1136,7 +1026,7 @@ if (run_plots) {
                                          n_unftrue = n_true_unfaithf))
     }
   }
-  true_faith_df <-  cbind(method=rep(methods_labels_k1k2, length(sample_sizes)), true_faith_df)
+  true_faith_df <-  cbind(method=rep(methods_labels, length(sample_sizes)), true_faith_df)
   colnames(true_faith_df) <- c("Algorithm", "N",
                                "n_ffaith", "ff_recov",
                                "n_bfaith", "bf_recov",
@@ -1144,7 +1034,7 @@ if (run_plots) {
                                "n_unfaith", "unf_recov")
   true_faith_df
 
-  library(xtable)
+
   print(xtable(true_faith_df, floating=FALSE, latex.environments=NULL,
                display=c("s", "s", rep("d", 9)),
                digits=c(0,0, rep(3,9))),
@@ -1166,48 +1056,12 @@ if (run_plots) {
 
 
 
-  # # Proportion of adjacency faithful datasets
-  #
-  # distr_adj_score <- data.frame()
-  # for (cur_N in sample_sizes) {
-  #   cur_true_metrics <- subset(true_metrics, N == cur_N)
-  #   min_score_cat <- cut(cur_true_metrics$adj_score.2,
-  #                        breaks = seq(0, 1, length.out = 11))
-  #   distr_adj_score <- rbind.data.frame(distr_adj_score,
-  #                                      c(table(min_score_cat)))
-  # }
-  # colnames(distr_adj_score) <- levels(min_score_cat)
-  # distr_adj_score <- cbind(N = sample_sizes, distr_adj_score)
-  # distr_adj_score <- cbind(distr_adj_score,
-  #                          faithful = apply(distr_adj_score[, c(7:11)], 1, sum))
-  #
-  # distr_adj_score
-  #
-  #
-  # # Proportion of mec (adj + ori) faithful datasets
-  # distr_mec_score <- data.frame()
-  # for (cur_N in sample_sizes) {
-  #   cur_true_metrics <- subset(true_metrics, N == cur_N)
-  #   min_score_cat <- cut(cur_true_metrics$mec_score.2,
-  #                        breaks = seq(0, 1, length.out = 11))
-  #   distr_mec_score <- rbind.data.frame(distr_mec_score,
-  #                                       c(table(min_score_cat)))
-  # }
-  # colnames(distr_mec_score) <- levels(min_score_cat)
-  # distr_mec_score <- cbind(N = sample_sizes, distr_mec_score)
-  #
-  # distr_mec_score <- cbind(distr_mec_score,
-  #                          faithful = apply(distr_mec_score[, c(7:11)], 1, sum))
-  # distr_mec_score
-
-
-
-
   ###############################################
   # Checking Number of PAGs in dcFCI's PAG List #
   ###############################################
 
-  ntop_df <- dcfci_metrics[, c("N", "pag_id", "sim", "ntop")]
+  # TODO: This seems to be outdated as well, given that we use mse
+  ntop_df <- dcfci_metrics_k1[, c("N", "pag_id", "sim", "ntop")]
   ntop_df <- as.data.frame(lapply(ntop_df , as.numeric))
   ntop_df <- ntop_df[order(ntop_df$N), ]
 
@@ -1230,17 +1084,19 @@ if (run_plots) {
   # of instances, not percentage...
   viol_df <- data.frame()
   for(cur_N in sample_sizes) {
-    all_metric_lists <- list( subset(fci_metrics, N == cur_N & pag_id %in% good_pag_ids),
-                              subset(cfci_metrics, N == cur_N & pag_id %in% good_pag_ids))
+    all_metric_lists <- list( subset(fci_metrics, N == cur_N),
+                              subset(cfci_metrics, N == cur_N),
+                              subset(miicss_metrics, N == cur_N))
     if (data_type == "continuous") {
-      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(bccd_metrics, N == cur_N & pag_id %in% good_pag_ids)
-      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcd_metrics, N == cur_N & pag_id %in% good_pag_ids)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(bccd_metrics, N == cur_N)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcd_metrics, N == cur_N)
       if ("magsl" %in% methods) {
-        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(magsl_metrics, N == cur_N & pag_id %in% good_pag_ids)
+        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(magsl_metrics, N == cur_N)
       }
-      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(gps_metrics, N == cur_N & pag_id %in% good_pag_ids)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(gps_metrics, N == cur_N)
     }
-    all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics, N == cur_N & pag_id %in% good_pag_ids)
+    all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics_k1_min, N == cur_N)
+    all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics_k2_min, N == cur_N)
 
     for (metrics_list in all_metric_lists) {
         # viol_df <- rbind.data.frame(viol_df,  c(N=cur_N, colMeans(
@@ -1263,11 +1119,10 @@ if (run_plots) {
   viol_df2 <- viol_df2[order(viol_df2$N), ]
   viol_df2
 
-  library(xtable)
-  sink(file=paste0(tables_folder, "viol_df2_", data_type, "_sel_top_", sel_top, ".txt"))
+  sink(file=paste0(tables_folder, "viol_df2_", data_type, ".txt"))
   print(xtable(viol_df2, floating=FALSE, latex.environments=NULL,
-               display=c("s", "d", "s", rep("d", length(methods))),
-               digits=c(0,3,0,rep(3, length(methods)))),
+               display=c("s", "d", "s", rep("d", length(methods_labels))),
+               digits=c(0,3,0,rep(3, length(methods_labels)))),
         math.style.exponents = TRUE,  include.rownames=FALSE)
   sink()
 
@@ -1279,29 +1134,46 @@ if (run_plots) {
   # Checking True PAG Recovery Rate #
   ###################################
 
+  dcfci_metrics_k1_min2 <- dcfci_metrics_k1_min
+  found_true_pag_ids <- which(fci_metrics$shd - dcfci_metrics_k1_min$shd < 0 &
+                                #dcfci_metrics_k2_min$max_reached == FALSE &
+                                !is.na(dcfci_metrics_k1_min$truePAGInd) )
+  dcfci_metrics_k1_min2[found_true_pag_ids, "shd"] <- 0
+  dcfci_metrics_k1_min2[found_true_pag_ids, "fdr"] <- 0
+  dcfci_metrics_k1_min2[found_true_pag_ids, "fomr"] <- 0
+
+  dcfci_metrics_k2_min2 <- dcfci_metrics_k2_min
+  found_true_pag_ids <- which(fci_metrics$shd - dcfci_metrics_k2_min$shd < 0 &
+                                #dcfci_metrics_k2_min$max_reached == FALSE &
+                                !is.na(dcfci_metrics_k2_min$truePAGInd) )
+  dcfci_metrics_k2_min2[found_true_pag_ids, "shd"] <- 0
+  dcfci_metrics_k2_min2[found_true_pag_ids, "fdr"] <- 0
+  dcfci_metrics_k2_min2[found_true_pag_ids, "fomr"] <- 0
+
   # Note: using dcfci_metrics, so true pag is also the only one recovered in the list
   n_true_df <- data.frame()
   for (cur_N in sample_sizes) {
-    cur_faithf_degree <- subset(faithf_degree, N == cur_N)
-    cur_true_metrics <- subset(true_metrics, N == cur_N)
+    cur_true_pag_metrics <- subset(true_pag_metrics, N == cur_N)
 
-    #plot(cur_faithf_degree$f_dep.1/cur_faithf_degree$f_dep.3, cur_true_metrics$trivial_score.2)
+    #cur_faithf_degree <- subset(faithf_degree, N == cur_N)
+    #plot(cur_faithf_degree$f_dep.1/cur_faithf_degree$f_dep.3, cur_true_pag_metrics$trivial_score.2)
     #plot(cur_faithf_degree$f_dep.1/cur_faithf_degree$f_dep.3, metrics_list$shd)
-    #plot(cur_true_metrics$mec_score.2, metrics_list$shd)
+    #plot(cur_true_pag_metrics$mec_score.2, metrics_list$shd)
 
 
-    all_metric_lists <- list( subset(fci_metrics, N == cur_N & pag_id %in% good_pag_ids),
-                              subset(cfci_metrics, N == cur_N & pag_id %in% good_pag_ids))
+    all_metric_lists <- list( subset(fci_metrics, N == cur_N),
+                              subset(cfci_metrics, N == cur_N),
+                              subset(miicss_metrics, N == cur_N))
     if (data_type == "continuous") {
-      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(bccd_metrics, N == cur_N & pag_id %in% good_pag_ids)
-      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcd_metrics, N == cur_N & pag_id %in% good_pag_ids)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(bccd_metrics, N == cur_N)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcd_metrics, N == cur_N)
       if ("magsl" %in% methods) {
-        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(magsl_metrics, N == cur_N & pag_id %in% good_pag_ids)
+        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(magsl_metrics, N == cur_N)
       }
-      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(gps_metrics, N == cur_N & pag_id %in% good_pag_ids)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(gps_metrics, N == cur_N)
     }
-    all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics_k1, N == cur_N & pag_id %in% good_pag_ids)
-    all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics_k2, N == cur_N & pag_id %in% good_pag_ids)
+    all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics_k1_min2, N == cur_N)
+    all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics_k2_min2, N == cur_N)
 
     for (metrics_list in all_metric_lists) {
       total_pags <- nrow(metrics_list)
@@ -1318,9 +1190,9 @@ if (run_plots) {
       # summary(faithf_degree_shd0$fadj_dep.1 /faithf_degree_shd0$fadj_dep.3)
       # summary(faithf_degree_shd0$fmec_dep.1 /faithf_degree_shd0$fmec_dep.3)
       # summary(faithf_degree_shd0$fskel_dep.1 /faithf_degree_shd0$fskel_dep.3)
-      # summary(cur_true_metrics[shd_0_ids, ]$adj_score.2)
-      # summary(cur_true_metrics[shd_0_ids, ]$trivial_score.2)
-      # summary(cur_true_metrics[shd_0_ids, ]$mec_score.2)
+      # summary(cur_true_pag_metrics[shd_0_ids, ]$adj_score.2)
+      # summary(cur_true_pag_metrics[shd_0_ids, ]$trivial_score.2)
+      # summary(cur_true_pag_metrics[shd_0_ids, ]$mec_score.2)
 
 
 
@@ -1334,7 +1206,7 @@ if (run_plots) {
 
     }
   }
-  n_true_df <- cbind(method=rep(methods_labels_k1k2, length(sample_sizes)), n_true_df)
+  n_true_df <- cbind(method=rep(methods_labels, length(sample_sizes)), n_true_df)
   n_true_df
 
   n_true_values_df <- n_true_df[, c(3,6,7)]
@@ -1360,14 +1232,14 @@ if (run_plots) {
 
   n_true_perc_df$variable <- factor(n_true_perc_df$variable,
                                     labels = c("counts", "perc"))
-  colnames(n_true_perc_df) <- c("N", "Recovered", methods_labels_k1k2)
+  colnames(n_true_perc_df) <- c("N", "Recovered", methods_labels)
 
-  sink(file=paste0(tables_folder, "true_pag_rec_rate_",
-                   data_type, "_sel_top_", sel_top, ".txt"))
+  sink(file=paste0(tables_folder, "true_pag_rec_rate2_",
+                   data_type, ".txt"))
   print(xtable(n_true_perc_df,
                floating=FALSE, latex.environments=NULL,
-               display=c("s", "d", "s", rep("s", length(methods_labels_k1k2))),
-               digits=c(0, 3, 0, rep(0, length(methods_labels_k1k2)))),
+               display=c("s", "d", "s", rep("s", length(methods_labels))),
+               digits=c(0, 3, 0, rep(0, length(methods_labels)))),
         math.style.exponents = TRUE,  include.rownames=FALSE)
   sink()
 
@@ -1379,71 +1251,101 @@ if (run_plots) {
   # beyond the validation checks                          #
   #########################################################
 
+
+  getDecision <- function(pvalue, stats_A, stats_B) {
+    decision <- "--"
+    if (is.numeric(pvalue) && pvalue < 0.05) {
+      if (stats_A[3] < stats_B[3] ||
+          stats_A[4] < stats_B[4]) decision = "uparrow"
+      else if (stats_A[3] > stats_B[3] ||
+               stats_A[4] > stats_B[4]) decision = "downarrow"
+      #else if (stats_A[2] > stats_B[2]) decision = "downarrow"
+    }
+    return(decision)
+  }
+
   library(DescTools)
+
+
+  completed_ids <- which(!dcfci_metrics_k2_min$max_reached & !dcfci_metrics_k1_min$max_reached)
 
   only_valid = FALSE
   for (only_valid in c(TRUE, FALSE)) {
     metrics_long_df <- c()
     pvalues_df <- data.frame()
     for(cur_N in sample_sizes) {
-      cur_dcfci_metrics <-  subset(dcfci_metrics, N == cur_N & pag_id %in% good_pag_ids)
-      all_metric_lists <- list( subset(fci_metrics, N == cur_N & pag_id %in% good_pag_ids),
-                                subset(cfci_metrics, N == cur_N & pag_id %in% good_pag_ids))
+      cur_dcfci_metrics_k1 <-  subset(dcfci_metrics_k1_min2, N == cur_N)
+      cur_dcfci_metrics_k2 <-  subset(dcfci_metrics_k2_min2, N == cur_N)
+
+      all_metric_lists <- list( subset(fci_metrics, N == cur_N),
+                                subset(cfci_metrics, N == cur_N),
+                                subset(miicss_metrics, N == cur_N))
       if (data_type == "continuous") {
-        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(bccd_metrics, N == cur_N & pag_id %in% good_pag_ids)
-        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcd_metrics, N == cur_N & pag_id %in% good_pag_ids)
+        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(bccd_metrics, N == cur_N)
+        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcd_metrics, N == cur_N)
         if ("magsl" %in% methods) {
-          all_metric_lists[[length(all_metric_lists) + 1]] <- subset(magsl_metrics, N == cur_N & pag_id %in% good_pag_ids)
+          all_metric_lists[[length(all_metric_lists) + 1]] <- subset(magsl_metrics, N == cur_N)
         }
-        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(gps_metrics, N == cur_N & pag_id %in% good_pag_ids)
+        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(gps_metrics, N == cur_N)
       }
-      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics, N == cur_N & pag_id %in% good_pag_ids)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics_k1, N == cur_N)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics_k2, N == cur_N)
 
       for (metric in metrics) {
-        if (!only_valid && !metric %in% metrics[c(1:3, 5)]) {
+        if (!only_valid && !metric %in% metrics[c(1:3, 6)]) {
           next
         }
         for (metrics_list_i in 1:(length(methods))) {
           cur_method <- methods[metrics_list_i]
           metrics_list <- all_metric_lists[[metrics_list_i]]
-          cur_valid_compat <- 1:nrow(metrics_list)
+          cur_valid_compat <- completed_ids #1:nrow(metrics_list)
           #cur_valid_compat <- which(cur_dcfci_metrics$ntop == 1)
           if (only_valid) {
             cur_valid_compat <- which(metrics_list$valid == TRUE & metrics_list$viol == FALSE)
           }
           len <- length(cur_valid_compat)
           grpA <- as.numeric(metrics_list[cur_valid_compat, metric])
-          grpB <- as.numeric(cur_dcfci_metrics[cur_valid_compat, metric])
+
+          dcfci_metric <- metric
+          if (metric == "sf_frechetUB") {
+            dcfci_metric = "trivial_score.2"
+          } else if (metric == "mec_frechetUB") {
+            dcfci_metric = "mec_score.2"
+          }
+          grpB1 <- as.numeric(cur_dcfci_metrics_k1[cur_valid_compat, dcfci_metric])
+          grpB2 <- as.numeric(cur_dcfci_metrics_k2[cur_valid_compat, dcfci_metric])
+
           if (metric == "bic_dist") {
             grpA <- as.numeric(metrics_list[cur_valid_compat, "bic"])
-            grpB <- as.numeric(cur_dcfci_metrics[cur_valid_compat, "bic"])
-            cur_true_bic_metrics <- subset(true_bic, N == cur_N & pag_id %in% good_pag_ids)
+            grpB1 <- as.numeric(cur_dcfci_metrics_k1[cur_valid_compat, "bic"])
+            grpB2 <- as.numeric(cur_dcfci_metrics_k2[cur_valid_compat, "bic"])
+            cur_true_bic_metrics <- subset(true_bic, N == cur_N)
             cur_true_bic <- as.numeric(cur_true_bic_metrics[cur_valid_compat, "bic"])
             grpA = abs(grpA - cur_true_bic)
-            grpB = abs(grpB - cur_true_bic)
+            grpB1 = abs(grpB1 - cur_true_bic)
+            grpB2 = abs(grpB2 - cur_true_bic)
           }
           #stats_A <- signif(summary(grpA)[c(2,3,5)],2)
           #stats_B <- signif(summary(grpB)[c(2,3,5)],2)
           stats_A <- signif(summary(grpA),2)
-          stats_B <- signif(summary(grpB),2)
+          stats_B1 <- signif(summary(grpB1),2)
+          stats_B2 <- signif(summary(grpB2),2)
           #pv1 <- wilcox_summary(grpA, grpB)$p.value # gprA > grpB
           #pv2 <- wilcox_summary(grpB, grpA)$p.value # gprB > grpA
-          if (cur_method == "dcfci") {
-            pvalue = " "
-          } else {
-            pvalue <- signif(SignTest(x=grpA, y =grpB, conf.level = 0.95, alternative = "two.sided")$p.value,2)
+          pvalue1 = pvalue2 = " "
+          if (cur_method != "dcfci_k1") {
+            pvalue1 <- signif(SignTest(x=grpA, y =grpB1, conf.level = 0.95, alternative = "two.sided")$p.value,2)
           }
-          decision <- "--"
+          if (cur_method != "dcfci_k2") {
+            pvalue2 <- signif(SignTest(x=grpA, y =grpB2, conf.level = 0.95, alternative = "two.sided")$p.value,2)
+          }
+          decision1 <- getDecision(pvalue1, stats_A, stats_B1)
+          decision2 <- getDecision(pvalue2, stats_A, stats_B2)
+
+
           #if (pvalue < 0.05 && stats_A[2] != stats_B[2]) {
           #    decision <- if (stats_A[2] < stats_B[2]) "uparrow" else "downarrow"
           #}
-          if (pvalue < 0.05) {
-              if (stats_A[3] < stats_B[3] ||
-                  stats_A[4] < stats_B[4]) decision = "uparrow"
-              else if (stats_A[3] > stats_B[3] ||
-                       stats_A[4] > stats_B[4]) decision = "downarrow"
-              #else if (stats_A[2] > stats_B[2]) decision = "downarrow"
-          }
 
           #p_sign_l <- SignTest(x=grpA, y =grpB, conf.level = 0.95, alternative = "less")
           #p_sign_g <- SignTest(x=grpA, y =grpB, conf.level = 0.95, alternative = "greater")
@@ -1453,8 +1355,10 @@ if (run_plots) {
                                                  t(as.numeric(stats_A[1:6])),
                                                  #t(as.numeric(stats_B)),
                                                  #pvalue=pv1,
-                                                 pvalue=pvalue,
-                                                 decision
+                                                 pvalue1=pvalue1,
+                                                 decision1=decision1,
+                                                 pvalue2=pvalue2,
+                                                 decision2=decision2
                                                  #p_sign_l=p_sign_l$p.value,
                                                  #p_sign_g=p_sign_g$p.value
                                       ))
@@ -1469,9 +1373,11 @@ if (run_plots) {
         }
       }
     }
+
+
     n_metrics <- length(metrics)
     if (!only_valid) {
-      n_metrics <- 4
+      n_metrics <- length(metrics) - 2
     }
 
     pvalues_df = cbind(
@@ -1485,15 +1391,18 @@ if (run_plots) {
       pvalues_df <- pvalues_df[, -which(colnames(pvalues_df) == "len")]
       colnames(pvalues_df) <- c("Algorithm", "N", "metric",
                                 "Min","Q1", "Med", "Mean", "Q3", "Max",
-                                "pvalue", "decision")
+                                "pvalue.k1", "decision.k1",
+                                "pvalue.k2", "decision.k2")
     } else {
       colnames(pvalues_df) <- c("Algorithm", "N", "metric", "nsims",
                                 "Min","Q1", "Med", "Mean", "Q3", "Max",
-                                "pvalue", "decision")
+                                "pvalue.k1", "decision.k1",
+                                "pvalue.k2", "decision.k2")
     }
 
 
     head(pvalues_df, 7)
+    subset(pvalues_df, Algorithm %in% c("FCI", "dcFCI_1", "dcFCI_2"))
 
 
     metrics_long_df$method <- factor(metrics_long_df$method, levels=methods,
@@ -1503,11 +1412,11 @@ if (run_plots) {
 
 
     library(ggplot2)
-    for (cur_metric_i in 1:5) {
-      if (!only_valid && !cur_metric %in% metrics[c(1:3, 5)]) {
+    for (cur_metric_i in 1:length(metrics)) {
+      cur_metric <- metrics[cur_metric_i]
+      if (!only_valid && !cur_metric %in% metrics[c(1:3, 6)]) {
         next
       }
-      cur_metric <- metrics[cur_metric_i]
       cur_metrics_long <- subset(metrics_long_df, metric == cur_metric) # & Algorithm != "DCD")
       p2 <- ggplot(cur_metrics_long, aes(x=Algorithm,y=val,fill=Algorithm))+
         geom_boxplot() +
@@ -1517,7 +1426,7 @@ if (run_plots) {
         facet_wrap(~N)
       p2
       ggsave(paste0(figures_folder, "boxplots_only_valid_", only_valid, "_", cur_metric,
-                    "_", data_type, "_sel_top_", sel_top, ".png"),
+                    "_", data_type, ".png"),
              width=7, height =5)
     }
 
@@ -1533,7 +1442,7 @@ if (run_plots) {
           facet_wrap(~N, scales = "free")
         p2
         ggsave(paste0(figures_folder, "boxplots_only_valid_", only_valid, "_", cur_metric,
-                      "_", data_type, "_sel_top_", sel_top, ".png"),
+                      "_", data_type,".png"),
                width=7, height =5)
       }
     }
@@ -1544,7 +1453,7 @@ if (run_plots) {
     #############################
 
     for (cur_metric in metrics) {
-      if (!only_valid && !cur_metric %in% metrics[c(1:3, 5)]) {
+      if (!only_valid && !cur_metric %in% metrics[c(1:3, 6)]) {
         next
       }
 
@@ -1681,18 +1590,18 @@ if (run_plots) {
   metric <- "bic"
   for (cur_N in sample_sizes) {
 
-    all_metric_lists <- list( subset(fci_metrics, N == cur_N & pag_id %in% good_pag_ids),
-                              subset(cfci_metrics, N == cur_N & pag_id %in% good_pag_ids))
+    all_metric_lists <- list( subset(fci_metrics, N == cur_N),
+                              subset(cfci_metrics, N == cur_N))
     if (data_type == "continuous") {
-      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(bccd_metrics, N == cur_N & pag_id %in% good_pag_ids)
-      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcd_metrics, N == cur_N & pag_id %in% good_pag_ids)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(bccd_metrics, N == cur_N)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcd_metrics, N == cur_N)
       if ("magsl" %in% methods) {
-        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(magsl_metrics, N == cur_N & pag_id %in% good_pag_ids)
+        all_metric_lists[[length(all_metric_lists) + 1]] <- subset(magsl_metrics, N == cur_N)
       }
-      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(gps_metrics, N == cur_N & pag_id %in% good_pag_ids)
+      all_metric_lists[[length(all_metric_lists) + 1]] <- subset(gps_metrics, N == cur_N)
     }
-    all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics, N == cur_N & pag_id %in% good_pag_ids)
-    cur_true_bic <- as.numeric(subset(true_bic, N == cur_N & pag_id %in% good_pag_ids)[, "bic", drop=TRUE])
+    all_metric_lists[[length(all_metric_lists) + 1]] <- subset(dcfci_metrics, N == cur_N)
+    cur_true_bic <- as.numeric(subset(true_bic, N == cur_N)[, "bic", drop=TRUE])
 
     for (metrics_list_i in 1:length(all_metric_lists)) {
       metrics_list <- all_metric_lists[[metrics_list_i]]
@@ -1775,7 +1684,6 @@ if (run_plots) {
 
   ggsave(paste0(figures_folder, "diff_bin", "_", data_type, "_sel_top_", sel_top, ".png"),
          width=8, height =6)
-}
 }
 
 
