@@ -49,10 +49,10 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
                                           ))
   }
 
-  cur_dcfci_metrics_min <- cur_dcfci_metrics
+  cur_dcfci_metrics_min <- cur_dcfci_metrics_mean <- cur_dcfci_metrics
   if (dim(cur_dcfci_metrics)[1] > 1) {
     cur_dcfci_metrics_min <- as.data.frame(t(sapply(cur_dcfci_metrics, min)))
-    cur_dcfci_metrics <- as.data.frame(t(colMeans(cur_dcfci_metrics)))
+    cur_dcfci_metrics_mean <- as.data.frame(t(colMeans(cur_dcfci_metrics)))
   }
 
 
@@ -65,8 +65,8 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
   if (is.null(dcfci_out$order_processed)) dcfci_out$order_processed <- NA
   if (is.null(dcfci_out$exceeded_list_max)) dcfci_out$exceeded_list_max <- NA
 
-  cur_dcfci_metrics <- cbind.data.frame(
-    cur_dcfci_metrics,
+  cur_dcfci_metrics_mean <- cbind.data.frame(
+    cur_dcfci_metrics_mean,
         truePAGInd=truePAGInd,
         truePAGProbInd = truePAGProbInd,
         max_ord =  dcfci_out$order_processed,
@@ -88,6 +88,7 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
     nprobtop=nprobtop)
 
 
-  return(list(dcfci_metrics=cur_dcfci_metrics,
-              dcfci_metrics_min=cur_dcfci_metrics_min))
+  return(list(dcfci_metrics_mean=cur_dcfci_metrics_mean,
+              dcfci_metrics_min=cur_dcfci_metrics_min,
+              dcfci_metrics=cur_dcfci_metrics))
 }

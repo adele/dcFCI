@@ -40,15 +40,23 @@ getStraightforwardPAGScore2 <- function(apag, suffStat, ord=NULL) {
 }
 
 #' @export getMECTargetedPAGScore
-getMECTargetedPAGScore <- function(apag, suffStat, ord=NULL) {
-  mec <- getMEC(apag, scored = TRUE, max.ord = ord, citestResults = suffStat$citestResults)
+getMECTargetedPAGScore <- function(apag, suffStat, ord=NULL,
+                                   allowNewTests = FALSE,
+                                   indepTest = NULL,
+                                   verbose = FALSE) {
+  mec <- getMEC(apag, scored = TRUE, max.ord = ord,
+                citestResults = suffStat$citestResults,
+                allowNewTests = allowNewTests, verbose=verbose,
+                indepTest = indepTest, suffStat = suffStat)
+  citestResults <- mec$citestResults
   faithfulnessDegree <- getFaithfulnessDegree(apag, mec$mec$all_citests)
 
   l2d <- getL2DistanceFromCertainty(faithfulnessDegree$probs)
   l2d2 <- getSquaredL2DistanceFromCertainty(faithfulnessDegree$probs)
   mse <- getNormalizedSquaredL2DistanceFromCertainty(faithfulnessDegree$probs)
   frechet_int <- getProbConjunction(faithfulnessDegree$probs)
-  return(list(mse=mse, l2d=l2d, l2d2=l2d2, frechetLB=frechet_int[1], frechetUB=frechet_int[2]))
+  return(list(mse=mse, l2d=l2d, l2d2=l2d2, frechetLB=frechet_int[1], frechetUB=frechet_int[2],
+              citestResults=citestResults))
 }
 
 

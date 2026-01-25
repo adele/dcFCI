@@ -66,18 +66,35 @@ getCITestResults <- function(x, y, Sxy, citestResults, indepTest, suffStat,
       if (verbose) cat("Performing new test...")
 
       testXY.S <- indepTest(x, y, Sxy, suffStat)
-      pvalue <- testXY.S
-      if (is.null(suffStat$n)) {
-        stop("Please provide the sample size \'n\' in the suffStat list.")
+
+      chiSqStat = df = NULL # default will be used for LR GLM-based CI Test
+      if (suffStat$retall) {
+        pvalue <- testXY.S$p
+        if (suffStat$method == "nnGCM") {
+          pvalue <- testXY.S$ret$pvalue
+          chi2stat <- testXY.S$ret$chi2stat
+          df <- testXY.S$ret$df
+        }
+      } else {
+        pvalue <- testXY.S
       }
 
-      if (!is.na(pvalue)) {
-        probsXY.S <- pvalue2probs(pvalue, n=suffStat$n)
-        pH0 <- probsXY.S$pH0
-        pH1 <- probsXY.S$pH1
-      } else {
+      if (is.null(suffStat$n)) {
+        if (!is.null(suffStat$dataset)) {
+          suffStat$n <- nrow(suffStat$dataset)
+        } else {
+          stop("Please provide the sample size \'n\' in the suffStat list.")
+        }
+      }
+
+      if (is.na(pvalue)) {
         pH0 <- 0.5
         pH1 <- 0.5
+      } else {
+        probsXY.S <- pvalue2probs(pvalue, n=suffStat$n, eff_size=suffStat$eff_size,
+                              chiSqStat = chi2stat, df=df)
+        pH0 <- probsXY.S$pH0
+        pH1 <- probsXY.S$pH1
       }
 
       curResults <- cbind(curResults, "pvalue"=pvalue,

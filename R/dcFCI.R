@@ -506,7 +506,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
 
     ord <- 0
     diff_citestResults <- list() # symmetric difference of citests for all candidate PAGs
-
+    error_message <- "No error"
     #library(futile.logger)
 
     # Set up logging to file
@@ -571,6 +571,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
         } else {
           has_errors <- TRUE
           toProcessPAGLists <- NULL
+          error_message <- paste0("No PAG to be processed at order ", ord, ".")
           break
         }
       }
@@ -600,6 +601,8 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
           cat("curord:", ord, "; length of toProcessPAGList: ", length(toProcessPAGList), "\n")
         if (length(toProcessPAGList) > list.max) {
           cat("ERROR: The maximum list size of", list.max, "has been exceeded.\n")
+          error_message <- paste0("Reached maximum list size at order ", ord,
+                                  " -- list size: ", length(toProcessPAGList), ".")
           exceeded_list_max <- TRUE
           has_errors <- TRUE
         }
@@ -652,14 +655,21 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
         cur_ord_pag_list <- c(cur_ord_pag_list, newProcessedPAGList)
 
 
-        symm_out <- getSymmDiffCITestResults(cur_ord_pag_list, ord,
+        valid_pags_ids <- which(!sapply(cur_ord_pag_list, function(x) {
+          x$violations }))
+
+        if (length(valid_pags_ids) > 0) {
+          symm_out <- getSymmDiffCITestResults(cur_ord_pag_list, ord,
                                              verbose=verbose >1)
-
-        #lapply(symm_out$cur_ord_pag_list, function(x) {x$scores})
-
-        diff_citestResults[[as.character(ord)]] <- symm_out$symmDiffCITests
-        cur_ord_pag_list <- symm_out$cur_ord_pag_list
-
+          diff_citestResults[[as.character(ord)]] <- symm_out$symmDiffCITests
+          cur_ord_pag_list <- symm_out$cur_ord_pag_list
+        } else {
+          error_message <- paste0("No valid PAGs at order ", ord, ".")
+          toProcessPAGList <- NULL
+          diff_citestResults[[as.character(ord)]] <- data.frame()
+          cur_ord_pag_list <- prev_cur_ord_pag_list
+          break
+        }
       } else {
         diff_citestResults[[as.character(ord)]] <- data.frame()
       }
@@ -782,7 +792,8 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
               diff_citestResults=diff_citestResults,
               elapsed_time=as.numeric(elapsed_time)[3],
               exceeded_list_max=exceeded_list_max,
-              order_processed=ord-1))
+              order_processed=ord-1,
+              error_message = error_message))
 }
 
 getProbIndices <- function(min_scores, max_scores) {

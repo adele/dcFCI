@@ -291,6 +291,9 @@ getSymmDiffCITestResults <- function(cur_ord_pag_list, ord,
                                      verbose=FALSE) {
   valid_pags_ids <- which(!sapply(cur_ord_pag_list, function(x) { x$violations }))
 
+  if (length(valid_pags_ids) == 0) {
+    return(NULL)
+  }
   cur_ord_valid_pags <- cur_ord_pag_list[valid_pags_ids]
   eval_citests_List <- lapply(cur_ord_valid_pags, function(x) { x$mec$all_citests} )
   all_eval_citests <- bind_rows(eval_citests_List)
