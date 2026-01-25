@@ -36,6 +36,7 @@ seeds = c(1,2,3)
 #seed = 2
 
 
+
 run_sims = TRUE # set to FALSE if files are already processed.
 restore_files = TRUE
 
@@ -58,7 +59,6 @@ runDCD = FALSE # Differentiable Causal Discovery (DCD) - 2021
 runMAGSL = FALSE # MAG Structure Learning - 2021
 runGPS = FALSE  # Greedy PAG Search (GPS) - 2022
 
-
 true_bic <- data.frame()
 true_pag_metrics <- data.frame()
 true_rmec_metrics <- data.frame()
@@ -72,8 +72,38 @@ dcd_metrics <- data.frame()
 magsl_metrics <- data.frame()
 gps_metrics <- data.frame()
 
-for (size in sizes) {
-  for (seed in seeds) {
+last_size_i = 1
+last_seed_i = 0
+# loading pre-computed metrics
+for (size_i in 1:length(sizes)) {
+  for (seed_i in 1:length(seeds)) {
+    size <- sizes[size_i]
+    seed <- seeds[seed_i]
+    fileid <- paste0("dense_", size, "_mixed_unfaithful_", seed)
+    cur_output_folder <- paste0(scary_output_folder, fileid, "/")
+    cur_lat_dirs <- list.dirs(cur_output_folder, recursive = F)
+    if (length(cur_lat_dirs) > 0) {
+      cur_dat_dir <- paste0(cur_lat_dirs[1], "/")
+      metrics_files <- list.files(cur_dat_dir,
+                                  pattern=glob2rx("20260112_*.RData"),
+                                  full.names = T)
+      for (metric_file in metrics_files) {
+        load(metric_file) # the last files have all of them together
+        last_size_i = size_i
+        last_seed_i = seed_i
+      }
+    }
+  }
+}
+
+
+seed_i = next_seed_i = if (last_seed_i == 3) 1 else last_seed_i + 1
+size_i = next_size_i = if (last_seed_i == 3) { last_size_i + 1 } else last_size_i
+
+for (size_i in next_size_i:length(sizes)) {
+  for (seed_i in next_seed_i:length(seeds)) {
+    size <- sizes[size_i]
+    seed <- seeds[seed_i]
 
     alpha = 0.05 # 0.01
 
@@ -110,7 +140,7 @@ for (size in sizes) {
     # Showing True PAG #
     ####################
 
-    debug = TRUE
+    debug = FALSE
     true.amat.pag <- true_objs$true.amat.pag[colnames(dat), colnames(dat)]
     true.sepset <- true_objs$true.sepset
     if (debug) {
@@ -119,11 +149,14 @@ for (size in sizes) {
       getSepsetResults(suffStat$citestResults, true.sepset)
     }
 
+
+
     ##################################
     # Assessing the true PAG metrics #
     ##################################
 
     indepTest <- mixedCITest
+    output_folder <- paste0(cur_dat_dir, "/")
 
     # if (runTrueMetrics) {
     #   cur_true_bic <- NA
@@ -156,31 +189,59 @@ for (size in sizes) {
       # under alpha = 0.01 (counts1) and 0.05 (counts2), plus number of tests (counts3)
       # although not necessary, a sufficient faithfulness for dcFCI is not to have a prob greater than 50%
       # in each of the tests required in each of the order.
-      max_ord <- 2 # ncol(true.amat.pag) - 2
 
-      selected_metrics <- c("frechetLB", "frechetUB", "mse")
-      rpags_mec_scores <- lapply(0:max_ord, function(r) {
-        rpag <- getRPAG(true.amat.pag, r, true.sepset)$r.amat.pag
-        rmec_score_out <- getMECTargetedPAGScore(rpag, suffStat, ord=r,
-                                                 allowNewTests = TRUE,
-                                                 indepTest = mixedCITest,
-                                                 verbose = TRUE)
-        suffStat$citestResults <- rmec_score_out$citestResults
-        r_out <- unlist(rmec_score_out)[selected_metrics]
-        names(r_out) <- paste0(r, "_", names(r_out))
-        r_out
-      })
+      rpags_mec_scores_file <- paste0(output_folder, "rpags_mec_scores_", fileid, ".RData")
+
+      if (!file.exists(rpags_mec_scores_file)) {
+        max_ord <- 2 # ncol(true.amat.pag) - 2
+
+        selected_metrics <- c("frechetLB", "frechetUB", "mse")
+
+        processRPAG <- function(r) {
+          cat("Processing RPAG ", r, "\n")
+          rpag <- getRPAG(true.amat.pag, r, true.sepset)$r.amat.pag
+          rmec_score_out <- getMECTargetedPAGScore(rpag, suffStat, ord=r,
+                                                   allowNewTests = TRUE,
+                                                   indepTest = mixedCITest,
+                                                   verbose = TRUE)
+          #suffStat$citestResults <- rmec_score_out$citestResults
+          r_out <- unlist(rmec_score_out)[selected_metrics]
+          names(r_out) <- paste0(r, "_", names(r_out))
+          return(list(r_out, citestResults=rmec_score_out$citestResults))
+        }
+
+
+        rpags_mec_scores <- future_lapply(0:max_ord, processRPAG,
+                                           future.seed=TRUE)
+
+
+        all_citestResults <- c()
+        for (i in 1:length(rpags_mec_scores)) {
+          all_citestResults <- rbind(all_citestResults, rpags_mec_scores[[i]]$citestResults)
+        }
+        citestResults <- all_citestResults[!duplicated(all_citestResults[,1:4]),]
+        suffStat$citestResults <- citestResults
+
+
+        save(suffStat, file=paste0(cur_dat_dir, "/", "nnGCM_suffStat.RData"))
+        save(rpags_mec_scores, file=rpags_mec_scores_file)
+      } else {
+        load(rpags_mec_scores_file)
+      }
+
+      rpags_mec_scores_clean <- list()
+      for (i in 1:length(rpags_mec_scores)) {
+        rpags_mec_scores_clean[[i]] <- rpags_mec_scores[[i]][[1]]
+      }
 
       true_rmec_metrics <- rbind(true_rmec_metrics,
                                  cbind.data.frame(fileid=fileid,
-                                                  t(unlist(rpags_mec_scores))))
+                                                  t(unlist(rpags_mec_scores_clean))))
     }
 
     ###############################
     # Setting up Causal Discovery #
     ###############################
-
-    output_folder <- paste0(cur_dat_dir, "/")
 
 
     labels <- colnames(true.amat.pag)
@@ -225,27 +286,35 @@ for (size in sizes) {
           # pH0ThreshMin=pH0ThreshMin; pH0ThreshMax=pH0ThreshMax; list.max = 500;
           # log_folder = file.path(getwd(), "tmp", "logs")
           # sapply(list.files("./R", full.names = T), source)
+          done = FALSE
+          while (!done) {
+            cat("Processing dcFCI with pH0ThreshMax =", pH0ThreshMax, "\n")
+            start_time <- proc.time()
+            dcfci_out <- dcFCI(suffStat, indepTest, labels, alpha,
+                               m.max = 2,
+                               verbose = 2,
+                               sel_top = sel_top,
+                               prob_sel_top = FALSE,
+                               run_parallel = TRUE,
+                               allowNewTests=TRUE,
+                               list.max = 1500,
+                               pH0ThreshMin = pH0ThreshMin,
+                               pH0ThreshMax = pH0ThreshMax,
+                               order_by_mse = FALSE,
+                               log_folder = file.path(dcfci_output_folder, "tmp", "logs"))
+            end_time <- proc.time()
+            elapsed_time <- end_time - start_time
+            dcfci_out$elapsed_time <- elapsed_time
 
-          start_time <- proc.time()
-          dcfci_out <- dcFCI(suffStat, indepTest, labels, alpha,
-                             m.max = 2,
-                             verbose = 2,
-                             sel_top = sel_top,
-                             prob_sel_top = FALSE,
-                             run_parallel = TRUE,
-                             allowNewTests=TRUE,
-                             list.max = 1500,
-                             pH0ThreshMin = pH0ThreshMin,
-                             pH0ThreshMax = pH0ThreshMax,
-                             order_by_mse = FALSE,
-                             log_folder = file.path(dcfci_output_folder, "tmp", "logs"))
-          end_time <- proc.time()
-          elapsed_time <- end_time - start_time
-          dcfci_out$elapsed_time <- elapsed_time
-
-          if (!is.null(dcfci_out)) {
-            save(dcfci_out, file=dcfci_out_file)
+            if (!is.null(dcfci_out) && !is.null(dcfci_out$mec_score_df)) {
+              save(dcfci_out, file=dcfci_out_file)
+              done = TRUE
+            } else {
+              cat("ERROR: could not process dcFCI. Change pH0ThreshMin and/or pH0ThreshMax.")
+              pH0ThreshMax = pH0ThreshMax - 0.05
+            }
           }
+
         } else {
           load(dcfci_out_file)
         }
@@ -267,13 +336,14 @@ for (size in sizes) {
         #r_true_pag <- getRPAG(true.amat.pag, r = dcfci_out$order_processed)
 
         dcfci_metrics_out <- getDCFCIMetrics(dcfci_out, dat,
-                                       suffStat$citestResults, true_rmax_pag)
+                                       suffStat$citestResults, true_rmax_pag,
+                                       checkViolations = FALSE)
         cat("\n dcFCI SHD -- mean: ", dcfci_metrics_out$dcfci_metrics_mean$shd, "min: ",
             dcfci_metrics_out$dcfci_metrics_min$shd, "\n")
         cat("\n dcFCI mec_score_up -- mean: ", dcfci_metrics_out$dcfci_metrics_mean$mec_score.2, "min: ",
             dcfci_metrics_out$dcfci_metrics_min$mec_score.2, "\n")
         if (runOrdMECFaithfDegree) {
-          cat("\n true mec_score_up: ", rpags_mec_scores[[m.max+1]][2], "\n")
+          cat("\n true mec_score_up: ", rpags_mec_scores_clean[[m.max+1]][2], "\n")
         }
 
 

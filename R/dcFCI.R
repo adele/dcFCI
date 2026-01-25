@@ -206,8 +206,11 @@ updateSkelScore <- function(apag, ord, citestResults, indepTest,
 
 
 processPotPAG <- function(id, toProcessPAGList, ord, citestResults, indepTest,
-                          suffStat, verbose=FALSE, allowNewTests=TRUE) {
+                          suffStat, verbose=FALSE, allowNewTests=TRUE,
+                          appender_file = NULL) {
 
+  futile.logger::flog.appender(futile.logger::appender.file(appender_file),
+                               name = "dcfci_log")
   futile.logger::flog.info(
     paste("Started processing PAG", id, " / ", length(toProcessPAGList)), name = "dcfci_log")
 
@@ -480,6 +483,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     ##### Initializing variables
     #############################
 
+    mec_score_df <- ord_pag_list_score_df <- diff_citestResults <- c()
     citestResults <- c()
 
     pag_List <- cur_ord_pag_list <- list()
@@ -513,8 +517,9 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     if (!file.exists(log_folder))
       dir.create(log_folder, recursive = TRUE)
 
-    futile.logger::flog.appender(futile.logger::appender.file(
-      paste0(file.path(log_folder, "dcfci_log"), format(Sys.time(), '%Y%m%d_%H%M%S%OS.3'), ".txt")),
+    appender_file <- paste0(file.path(log_folder, "dcfci_log"),
+                            format(Sys.time(), '%Y%m%d_%H%M%S%OS.3'), ".txt")
+    futile.logger::flog.appender(futile.logger::appender.file(appender_file),
       name = "dcfci_log")
     futile.logger::flog.info(paste("Initializing..."), name = "dcfci_log")
 
@@ -542,6 +547,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
         cat("length of todo_pag_list in ord=: ", ord, ": ", length(todo_pag_list), "\n")
 
       toProcessPAGLists <- list()
+      length_toProcessPAGLists <- 0
       has_errors <- FALSE
       for (i in seq_along(todo_pag_list))  {
         curpag <- todo_pag_list[[i]]
@@ -568,6 +574,17 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
 
         if (!is.null(outList)) {
           toProcessPAGLists[[i]] <- outList
+          length_toProcessPAGLists <- length_toProcessPAGLists + length(outList)
+          if (verbose)
+            cat("curord:", ord, "; current length of toProcessPAGList: ", length_toProcessPAGLists, "\n")
+          if (length_toProcessPAGLists > list.max) {
+            cat("ERROR: The maximum list size of", list.max, "has been exceeded.\n")
+            error_message <- paste0("Reached maximum list size at order ", ord,
+                                    " -- list size: ", length_toProcessPAGLists, ".")
+            exceeded_list_max <- TRUE
+            has_errors <- TRUE
+            break
+          }
         } else {
           has_errors <- TRUE
           toProcessPAGLists <- NULL
@@ -624,7 +641,8 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                                          processPotPAG, toProcessPAGList,
                                          ord, citestResults, indepTest, suffStat,
                                          verbose=verbose > 1,
-                                         allowNewTests=allowNewTests, future.seed=TRUE)
+                                         allowNewTests=allowNewTests,
+                                         appender_file=appender_file, future.seed=TRUE)
 
           # Updating used citestResults and newProcessedPAGList
           all_citestResults <- citestResults
@@ -642,7 +660,8 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
             out_processed <- processPotPAG(i, toProcessPAGList, ord,
                                            citestResults, indepTest,
                                            suffStat, verbose=verbose > 1,
-                                           allowNewTests=allowNewTests)
+                                           allowNewTests=allowNewTests,
+                                           appender_file = appender_file)
             all_citestResults <- rbind(all_citestResults, out_processed$citestResults)
             newProcessedPAGList[[i]] <- out_processed$potPAG
           }
@@ -746,42 +765,43 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     #lapply(pag_List, function(x) {formatSepset(x$sepset)})
     #sapply(pag_List, function(x) {x$curord})
 
+    top_dcPAGs <- top_scoresDF <- NULL
+    if (length(pag_List) > 1) {
+      ord_pag_list_score_df <- rankPAGList(pag_List, max_ord = ord-1,
+                                           score_type = "pag_list")
 
-    ord_pag_list_score_df <- rankPAGList(pag_List, max_ord = ord-1,
-                                         score_type = "pag_list")
-
-    mec_score_df <- rankPAGList(pag_List, max_ord =  ord-1,
-                                score_type = "mec")
-
-
-    # Putting the score tables again in the order of the pag ids
-    ord_pag_list_score_df <- ord_pag_list_score_df[
-      order(ord_pag_list_score_df$pag_list_id), ]
-
-    # PAGs are now sorted according to their MEC-Targeted Score (mec_score_df)
-    pag_List <- pag_List[mec_score_df$pag_list_id]
-
-    # First tables are sorted according to the order in mec_score_df
-    ord_pag_list_score_df <- ord_pag_list_score_df[mec_score_df$pag_list_id, ]
+      mec_score_df <- rankPAGList(pag_List, max_ord =  ord-1,
+                                  score_type = "mec")
 
 
-    # Then the order is set sequentially across all score tables
-    mec_score_df$pag_list_id <- 1:length(pag_List)
-    ord_pag_list_score_df$pag_list_id <- 1:length(pag_List)
+      # Putting the score tables again in the order of the pag ids
+      ord_pag_list_score_df <- ord_pag_list_score_df[
+        order(ord_pag_list_score_df$pag_list_id), ]
 
-    #selects those with top mec_score upper bound at the last iteration
-    if (prob_sel_top) {
-      top_ids <- which(mec_score_df$prob_index <= prob_sel_top &
-                         mec_score_df$violations == FALSE &
-                         mec_score_df$duplicated == FALSE)
-    } else {
-      top_ids <- which(mec_score_df$index <= sel_top &
-                         mec_score_df$violations == FALSE &
-                         mec_score_df$duplicated == FALSE)
+      # PAGs are now sorted according to their MEC-Targeted Score (mec_score_df)
+      pag_List <- pag_List[mec_score_df$pag_list_id]
+
+      # First tables are sorted according to the order in mec_score_df
+      ord_pag_list_score_df <- ord_pag_list_score_df[mec_score_df$pag_list_id, ]
+
+
+      # Then the order is set sequentially across all score tables
+      mec_score_df$pag_list_id <- 1:length(pag_List)
+      ord_pag_list_score_df$pag_list_id <- 1:length(pag_List)
+
+      #selects those with top mec_score upper bound at the last iteration
+      if (prob_sel_top) {
+        top_ids <- which(mec_score_df$prob_index <= prob_sel_top &
+                           mec_score_df$violations == FALSE &
+                           mec_score_df$duplicated == FALSE)
+      } else {
+        top_ids <- which(mec_score_df$index <= sel_top &
+                           mec_score_df$violations == FALSE &
+                           mec_score_df$duplicated == FALSE)
+      }
+      top_dcPAGs <- pag_List[top_ids]
+      top_scoresDF <- mec_score_df[top_ids,]
     }
-
-    top_dcPAGs <- pag_List[top_ids]
-    top_scoresDF <- mec_score_df[top_ids,]
   })
 
   return(list(top_dcPAGs=top_dcPAGs, # PAGs ranked as 1st

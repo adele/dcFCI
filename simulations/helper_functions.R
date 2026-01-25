@@ -1,4 +1,4 @@
-getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
+getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag, checkViolations=TRUE) {
   top_mec_score_up <- dcfci_out$mec_score_df[1,1]
   top_mec_score_1mse <- dcfci_out$mec_score_df[1,2]
 
@@ -31,7 +31,8 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag) {
     #print(formatSepset(est.sepset))
 
     dcfci_metrics_partial <-  getMetrics(true.amat.pag, est.amat.pag, est.sepset,
-                                         dat=dat, conservative = FALSE)
+                                         dat=dat, conservative = FALSE,
+                                         checkViolations = checkViolations)
 
     if (is.null(dcfci_top_pag$mec$mec_mse)) {
       mec_probs <- c(subset(dcfci_top_pag$mec$all_citests, type == "indep")$pH0,

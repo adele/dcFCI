@@ -145,9 +145,10 @@ getFaithfulnessScores <- function(apag, suffStat,
               faithf_mec_indep_counts=faithf_mec_indep_counts))
 }
 
+# Only set checkViolations = FALSE if est.amat.pag is valid and has no violations
 #' @export getMetrics
 getMetrics <- function(true.amat.pag, est.amat.pag, est.sepset=NULL, dat=NULL,
-                       conservative=FALSE) {
+                       conservative=FALSE, checkViolations = TRUE) {
   fdr=NA; fomr=NA; shd=NA
   if (!is.null(est.amat.pag)) {
     posneg <- getPAGPosNegMetrics(true.amat.pag, est.amat.pag)
@@ -156,9 +157,14 @@ getMetrics <- function(true.amat.pag, est.amat.pag, est.sepset=NULL, dat=NULL,
     shd = shd_PAG(true.amat.pag, est.amat.pag)
   }
 
+  checkPAGValidity <- TRUE
+  if (!checkViolations) {
+    checkPAGValidity <- FALSE
+  }
+
   bic <- NA
-  hasViol <- msep_violations <- NA
-  if (!is.null(est.sepset)) {
+  hasViol <- msep_violations <- valid_PAG <- NA
+  if (checkViolations && !is.null(est.sepset)) {
     violations <- hasViolation(est.amat.pag, sepset=est.sepset,
                                conservative=conservative,
                                log=TRUE, verbose=FALSE)
@@ -171,12 +177,12 @@ getMetrics <- function(true.amat.pag, est.amat.pag, est.sepset=NULL, dat=NULL,
     } else {
       msep_violations <- NA
     }
-  } else {
+  } else if (checkPAGValidity) {
     valid_PAG <- isValidPAG(est.amat.pag, conservative = conservative,
                             knowledge = FALSE, verbose=FALSE)
   }
 
-  if (valid_PAG && !is.null(dat)) {
+  if ((!checkPAGValidity || valid_PAG) && !is.null(dat)) {
     bic <- getBIC(est.amat.pag, dat, type="BIC")$bic
   }
 
