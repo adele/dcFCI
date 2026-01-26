@@ -13,14 +13,14 @@ source("./simulations/helper_functions.R")
 source("./R/metrics_PAG.R")
 
 # If running in parallel:
-run_parallel = FALSE #TRUE
+run_parallel = TRUE
 
 if (run_parallel) {
   require(doFuture)
   require(future.apply)
-  n_cores <- 12
-  # plan("multisession", workers = n_cores)
-  # plan("multicore", workers = n_cores) # forking
+  n_cores <- 8
+  #plan("multisession", workers = n_cores)
+  #plan("multicore", workers = n_cores) # forking
   plan("cluster", workers = n_cores)
 }
 
@@ -46,13 +46,13 @@ debug = FALSE
 ####################
 
 
-run_sims = FALSE # set to FALSE if files are already processed.
+run_sims = TRUE # set to FALSE if files are already processed.
 
 # For mixed data types
 # Available in R
 runFCI = FALSE # FALSE # Fast Causal Inference (FCI) - 2008
 runCFCI = FALSE # FALSE # Conservative FCI (cFCI) - 2012, 2014 (?)
-runMIICSS = FALSE # FALSE #  MIIC_search&score (MIICSS) 2025
+runMIICSS = TRUE # FALSE #  MIIC_search&score (MIICSS) 2025
 runDCFCI = TRUE # FALSE # Data-Compatible FCI (dcFCI) -- our work
 
 # For only continuous (gaussian) variables
@@ -64,8 +64,8 @@ runMAGSL = FALSE # MAG Structure Learning - 2021
 runGPS = FALSE  # Greedy PAG Search (GPS) - 2022
 
 
-runTrueMetrics = FALSE
-runOrdMECFaithfDegree <- FALSE
+runTrueMetrics = TRUE
+runOrdMECFaithfDegree <- TRUE
 
 run_plots = FALSE
 
@@ -78,10 +78,10 @@ if (run_sims) {
   # Running Simulations #
   #######################
 
-  for (data_type in c("mixed", "continuous")) {
+  for (data_type in c("continuous")) { # c("mixed", "continuous")) {
   #for (data_type in c()) {
-      output_folder <- paste0("../dcFCI_Simulations/",
-                            data_type, "/")
+    output_folder <- paste0("../dcFCI_Simulations/",
+                          data_type, "/")
     n_processed = 0
     if (check_processed) {
       metrics_files <- list.files(output_folder,
@@ -106,6 +106,9 @@ if (run_sims) {
       dcd_metrics <- data.frame()
       magsl_metrics <- data.frame()
       gps_metrics <- data.frame()
+
+      dcfci_metrics2 <- data.frame()
+      dcfci_metrics_min2 <- data.frame()
     }
 
     res_i = 0
@@ -117,6 +120,7 @@ if (run_sims) {
             next
           }
 
+          redoDCFCI = FALSE
           alpha = 0.05 # 0.01
 
           cat("\n\nPAG: ", pag_id, "N: ", N, "sim: ", sim, "\n")
@@ -130,6 +134,8 @@ if (run_sims) {
 
           true.amat.pag <- true_pags_list[[pag_id]]
           true.sepset <- getPAGImpliedSepset(true.amat.pag)
+
+
           if (debug) {
            renderAG(true.amat.pag)
            formatSepset(true.sepset)
@@ -151,7 +157,7 @@ if (run_sims) {
 
 
           dat <- read.csv(file=paste0(dat_folder, dat_file))
-          cat("\nDataset with", ncol(dat), "columns.\n")
+          #cat("\nDataset with", ncol(dat), "columns.\n")
 
           cat_cols <- as.numeric(which(sapply(dat, is.character)))
           dat[, cat_cols] <- lapply(dat[, cat_cols], as.factor)
@@ -199,6 +205,27 @@ if (run_sims) {
             suffStat$citestResults <- citestResults
             save(suffStat, file=suffStat_file)
           }
+
+          trueSepsetResults <-
+            getSepsetResults(suffStat$citestResults, true.sepset)
+          minPH0 <- min(trueSepsetResults$pH0)
+          pH0ThreshMin = minPH0 - 0.005
+          while (round(pH0ThreshMin, digits = 2) > minPH0) {
+            pH0ThreshMin = pH0ThreshMin - 0.005
+          }
+          pH0ThreshMin = round(pH0ThreshMin, digits = 2)
+
+          # pH0ThreshMin = 0.3
+          # if (minPH0 < 0.3) {
+          #   redoDCFCI = TRUE
+          #   pH0ThreshMin = minPH0 - 0.005
+          #   while (round(pH0ThreshMin, digits = 2) > minPH0) {
+          #     pH0ThreshMin = pH0ThreshMin - 0.005
+          #   }
+          #   pH0ThreshMin = round(pH0ThreshMin, digits = 2)
+          #   cat("Redo -- minPH0",  minPH0, "; pH0ThreshMin= ", pH0ThreshMin, "\n")
+          # }
+
 
           ##################################
           # Assessing the true PAG metrics #
@@ -371,7 +398,8 @@ if (run_sims) {
           }
 
           if (runMIICSS) {
-            # devtools::install_github("miicTeam/miicsearchscore")
+            # install.packages("miic", dependencies = TRUE)
+            # devtools::install_github("miicTeam/miicsearchscore", dependencies=TRUE)
             library(miicsearchscore)
 
             miicss_output_folder <- paste0(output_folder_sim, "MIICSS/")
@@ -673,12 +701,15 @@ if (run_sims) {
             # Running dcFCI #
             #################
 
-            sel_top_list <- c(1,2) #,3)
+            sel_top_list <- c(1,2,3)
             prob_sel_top = FALSE
-            pH0ThreshMin = 0.3
             exceeded_list_max <- FALSE
 
             for (sel_top in sel_top_list) {
+              if (!redoDCFCI && exceeded_list_max) {
+                next
+              }
+
               if (data_type == "continuous") {
                 dcfci_output_folder <- paste0(output_folder_sim, "dcFCI6/", "top", sel_top, "/")
               } else {
@@ -698,28 +729,52 @@ if (run_sims) {
                 }
               }
 
-              # redo_date <- as.POSIXct("2026-01-17 15:00:00", tz="CET")
-              # check_date <- as.POSIXct("2026-01-19 00:00:00", tz="CET")
-              # if (!file.exists(dcfci_out_file) ||
-              #     (as.POSIXct(file.info(dcfci_out_file)$mtime) < check_date)) {
-              #     stop("Check: Not processed yet")
-              # } else {
-              #   next
-              # }
-
-              if (exceeded_list_max) {
-                if (file.exists(dcfci_out_file)) {
-                    # && (N > 1000 || as.POSIXct(file.info(dcfci_out_file)$mtime) >= redo_date)) {
-                  load(dcfci_out_file)
+              redo_date <- as.POSIXct("2026-01-26 20:00:00", tz="CET")
+              if (file.exists(dcfci_out_file) && as.POSIXct(file.info(dcfci_out_file)$mtime) < redo_date) {
+                dcfci_out_file2 <- paste0(dcfci_output_folder, "dcfci_out2_", fileid, "_", eff_size_str, ".RData")
+                if (file.exists(dcfci_out_file2)) {
+                  load(dcfci_out_file2)
                 } else {
-                  break
+                  load(dcfci_out_file)
+
+                  if (!is.null(dcfci_out$fit_dcfci)) {
+                    dcfci_out_out <- dcfci_out
+                    dcfci_out <- dcfci_out$fit_dcfci
+                    dcfci_out$elapsed_time <- dcfci_out_out$time_taken
+                  }
+
+                  dcfci_out2 <- dcfci_out
+                  save(dcfci_out2, file=dcfci_out_file2)
+                }
+
+                if (!is.null(dcfci_out2$mec_score_df)) {
+                  eval_dat <- if (data_type == "continuous") dat else NULL
+                  metrics_out2 <- getDCFCIMetrics(dcfci_out2, eval_dat,
+                                                 suffStat$citestResults, true.amat.pag,
+                                                 checkViolations = FALSE)
+                  cat("\n dcFCI (OLD) SHD: ", metrics_out2$dcfci_metrics_mean$shd, "min: ", metrics_out2$dcfci_metrics_min$shd, "\n")
+                  cat("\n dcFCI (OLD) mec_score_up: ", metrics_out2$dcfci_metrics_mean$mec_score.2, "\n")
+                  cat("\n dcFCI (OLD) mec_score_1mse: ", 1 - metrics_out2$dcfci_metrics_min$mec_score_mse, "\n")
+
+
+                  dcfci_metrics2 <- rbind(dcfci_metrics2,
+                                         cbind(data_type=data_type, N=N, pag_id=pag_id, sim=sim, eff_size=eff_size_str,
+                                               sel_top = sel_top, prob_sel_top = prob_sel_top,
+                                               pH0ThreshMin=pH0ThreshMin,
+                                               data.frame(metrics_out2$dcfci_metrics_mean)))
+
+                  dcfci_metrics_min2 <- rbind(dcfci_metrics_min2,
+                                             cbind(data_type=data_type, N=N, pag_id=pag_id, sim=sim, eff_size=eff_size_str,
+                                                   sel_top = sel_top, prob_sel_top = prob_sel_top,
+                                                   pH0ThreshMin=pH0ThreshMin,
+                                                   data.frame(metrics_out2$dcfci_metrics_min)))
+                } else {
+                  cat("dcFCI_out2 has old format!\n")
                 }
               }
 
-
-              if (!restore_files || !file.exists(dcfci_out_file)
-                  # || (N < 1000 && as.POSIXct(file.info(dcfci_out_file)$mtime) < redo_date)
-                  ) {
+              if (redoDCFCI || !restore_files ||!file.exists(dcfci_out_file) ||
+                  as.POSIXct(file.info(dcfci_out_file)$mtime) < redo_date) {
                 # m.max = Inf; fixedGaps = NULL; fixedEdges = NULL;
                 # verbose = 2; sel_top = 1; prob_sel_top = FALSE; run_parallel = TRUE;
                 # allowNewTests=TRUE; pH0ThreshMin=0.3; pH0ThreshMax=1; list.max = 500;
@@ -735,9 +790,9 @@ if (run_sims) {
                                    run_parallel = TRUE,
                                    allowNewTests=TRUE,
                                    list.max = 1000,
-                                   pH0ThreshMin=pH0ThreshMin,
+                                   pH0ThreshMin = min(0.3, pH0ThreshMin),
                                    pH0ThreshMax = 1,
-                                   order_by_mse = FALSE,
+                                   combine_mse = TRUE,
                                    log_folder = file.path(dcfci_output_folder, "tmp", "logs"))
                 end_time <- proc.time()
                 elapsed_time <- end_time - start_time
@@ -764,9 +819,11 @@ if (run_sims) {
 
               eval_dat <- if (data_type == "continuous") dat else NULL
               metrics_out <- getDCFCIMetrics(dcfci_out, eval_dat,
-                                             suffStat$citestResults, true.amat.pag)
-              cat("\n dcFCI SHD: ", metrics_out$dcfci_metrics$shd, "min: ", metrics_out$dcfci_metrics_min$shd, "\n")
-              cat("\n dcFCI mec_score_up: ", metrics_out$dcfci_metrics$mec_score.2, "\n")
+                                             suffStat$citestResults, true.amat.pag,
+                                             checkViolations = FALSE)
+              cat("\n dcFCI SHD: ", metrics_out$dcfci_metrics_mean$shd, "min: ", metrics_out$dcfci_metrics_min$shd, "\n")
+              cat("\n dcFCI mec_score_up: ", metrics_out$dcfci_metrics_mean$mec_score.2, "\n")
+              cat("\n dcFCI mec_score_1mse: ", 1 - metrics_out$dcfci_metrics_min$mec_score_mse, "\n")
               if (runTrueMetrics) {
                 cat("\n true mec_score_up: ", true_mec_score$frechetUB, "\n")
               }
@@ -776,7 +833,7 @@ if (run_sims) {
                                      cbind(data_type=data_type, N=N, pag_id=pag_id, sim=sim, eff_size=eff_size_str,
                                            sel_top = sel_top, prob_sel_top = prob_sel_top,
                                            pH0ThreshMin=pH0ThreshMin,
-                                           data.frame(metrics_out$dcfci_metrics)))
+                                           data.frame(metrics_out$dcfci_metrics_mean)))
 
               dcfci_metrics_min <- rbind(dcfci_metrics_min,
                                          cbind(data_type=data_type, N=N, pag_id=pag_id, sim=sim, eff_size=eff_size_str,
@@ -834,6 +891,10 @@ if (run_sims) {
                    file = paste0(output_folder, "20260112_dcfci_metrics.RData"))
               save(dcfci_metrics_min,
                    file = paste0(output_folder, "20260112_dcfci_metrics_min.RData"))
+              save(dcfci_metrics2,
+                   file = paste0(output_folder, "20260112_dcfci_metrics2.RData"))
+              save(dcfci_metrics_min2,
+                   file = paste0(output_folder, "20260112_dcfci_metrics_min2.RData"))
           }
         } # end sim loop
       } # end N loop
@@ -843,6 +904,7 @@ if (run_sims) {
 
 
 #############################
+
 
 library(xtable)
 library(RColorBrewer)

@@ -268,7 +268,7 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                   run_parallel = TRUE, allowNewTests=TRUE,
                   list.max = 500,
                   pH0ThreshMin=0.5, pH0ThreshMax=1,
-                  order_by_mse = FALSE,
+                  combine_mse = TRUE, # before was FALSE
                   log_folder = file.path(getwd(), "tmp", "logs")) {
 
   ord_pag_score = "ord_symm_diff_score"
@@ -726,19 +726,20 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
 
       ord_pag_list_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
                                             score_type = "pag_list",
-                                            order_by_mse = order_by_mse)
+                                            combine_mse = combine_mse)
 
       # mec_score is the MEC-targetted pag score
       mec_score_df <- rankPAGList(cur_ord_pag_list, max_ord = ord,
                                   score_type = "mec",
-                                  order_by_mse = order_by_mse)
+                                  combine_mse = combine_mse)
 
       #lapply(pag_List, function(x) {(x$mec)})
       #lapply(pag_List, function(x) {(x$scores)})
 
       top_dc_pag_ids <- getTopPagIds(ord_pag_list_score_df,
-                                     mec_score_df =mec_score_df,
-                                     ord, sel_top, prob_sel_top)
+                                     mec_score_df = mec_score_df,
+                                     ord, sel_top, prob_sel_top,
+                                     combine_mse = combine_mse)
 
       # subset(mec_score_df, pag_list_id %in% top_dc_pag_ids)
       # subset(ord_pag_list_score_df, pag_list_id %in% top_dc_pag_ids)
@@ -768,10 +769,12 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
     top_dcPAGs <- top_scoresDF <- NULL
     if (length(pag_List) > 1) {
       ord_pag_list_score_df <- rankPAGList(pag_List, max_ord = ord-1,
-                                           score_type = "pag_list")
+                                           score_type = "pag_list",
+                                           combine_mse = combine_mse)
 
       mec_score_df <- rankPAGList(pag_List, max_ord =  ord-1,
-                                  score_type = "mec")
+                                  score_type = "mec",
+                                  combine_mse = combine_mse)
 
 
       # Putting the score tables again in the order of the pag ids
@@ -845,7 +848,7 @@ getProbIndices <- function(min_scores, max_scores) {
 # ord_symm_diff_low, ord_union_low
 rankPAGList <- function(pag_list, max_ord,
                         score_type = "pag_list",
-                        order_by_mse = FALSE) {
+                        combine_mse = TRUE) {
 
   score_names=c("ord_symm_diff_score", "ord_union_mec_score")
   score_short_names = c("symmdiff", "union")
@@ -900,9 +903,9 @@ rankPAGList <- function(pag_list, max_ord,
   }
 
   top_labels <- c("score_up", "score_1-mse")
-  if (order_by_mse) {
-    top_labels <- c("score_1-mse", "score_up")
-  }
+  # if (order_by_mse) {
+  #   top_labels <- c("score_1-mse", "score_up")
+  # }
 
   ordered_labels <- c()
   for (cur_ord in seq(max_ord,0,-1)) {
@@ -926,9 +929,57 @@ rankPAGList <- function(pag_list, max_ord,
     all_scores[, ordered_labels, drop = FALSE],
     pag_list_id=1:nrow(all_scores))
 
+  # getting up scores
+  agg_scores_up <- c()
+  for (score_short_name in score_short_names) {
+    agg_scores_up <- cbind(agg_scores_up,
+        apply(tmp_scores[, which(grepl(paste0(score_short_name,"_score_up"), colnames(tmp_scores))), drop = FALSE], 1, prod))
+  }
+  colnames(agg_scores_up) <- paste0("agg_", score_short_names, "_up")
+
+  # getting 1mse scores
+  agg_scores_1mse <- c()
+  for (score_short_name in score_short_names) {
+    agg_scores_1mse <- cbind(agg_scores_1mse,
+                           apply(tmp_scores[, which(grepl(paste0(score_short_name,"_score_1-mse"), colnames(tmp_scores))), drop = FALSE], 1, prod))
+  }
+  colnames(agg_scores_1mse) <- paste0("agg_", score_short_names, "_1-mse")
+
+  if (combine_mse) {
+    agg_scores_up_1mse <- c()
+    for (score_short_name_i in 1:length(score_short_names)) {
+      agg_scores_up_1mse <- cbind(agg_scores_up_1mse,
+                               apply(cbind(agg_scores_up[,score_short_name_i], agg_scores_1mse[,score_short_name_i]), 1, prod))
+    }
+    colnames(agg_scores_up_1mse) <- paste0("agg_", score_short_names, "_up_1mse")
+  }
+
+  # getting lb scores
+  agg_scores_lb <- c()
+  for (score_short_name in score_short_names) {
+    agg_scores_lb <- cbind(agg_scores_lb,
+                             apply(tmp_scores[, which(grepl(paste0(score_short_name,"_score_lb"), colnames(tmp_scores))), drop = FALSE], 1, prod))
+  }
+  colnames(agg_scores_lb) <- paste0("agg_", score_short_names, "_lb")
+
+  if (combine_mse) {
+    agg_scores_lb_1mse <- c()
+    for (score_short_name_i in 1:length(score_short_names)) {
+      agg_scores_lb_1mse <- cbind(agg_scores_lb_1mse,
+                                  apply(cbind(agg_scores_lb[,score_short_name_i], agg_scores_1mse[,score_short_name_i]), 1, prod))
+    }
+    colnames(agg_scores_lb_1mse) <- paste0("agg_", score_short_names, "_lb_1mse")
+  }
+
+
+
+  if (combine_mse) {
+    tmp_scores <- cbind(agg_scores_up_1mse, agg_scores_lb_1mse, tmp_scores)
+  } else {
+    tmp_scores <- cbind(agg_scores_up, agg_scores_1mse, agg_scores_lb, tmp_scores)
+  }
+
   ordered_ids <- dplyr::arrange_all(tmp_scores, dplyr::desc)$pag_list_id
-
-
 
   tmp_scores[, "violations"] <- scores_df$violation
   tmp_scores <- tmp_scores[ordered_ids, ]
@@ -943,9 +994,18 @@ rankPAGList <- function(pag_list, max_ord,
     }
   }
 
+  #prob_indices <- getProbIndices(
+  #  tmp_scores[, paste0("ord", max_ord, "_", score_short_names[1], "_score_lb")],
+  #  tmp_scores[, paste0("ord", max_ord, "_", score_short_names[1], "_score_up")])
+
+  lb_col <- paste0("agg_", score_short_names[1],"_lb")
+  if (combine_mse) {
+    lb_col <- paste0("agg_", score_short_names[1],"_lb_1mse")
+  }
   prob_indices <- getProbIndices(
-    tmp_scores[, paste0("ord", max_ord, "_", score_short_names[1], "_score_lb")],
-    tmp_scores[, paste0("ord", max_ord, "_", score_short_names[1], "_score_up")])
+    tmp_scores[, lb_col],
+    tmp_scores[, 1])
+
   new_scores_df <- cbind(tmp_scores,
                          "prob_index"= prob_indices)
 
