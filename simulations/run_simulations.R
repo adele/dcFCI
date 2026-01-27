@@ -18,16 +18,33 @@ run_parallel = TRUE
 if (run_parallel) {
   require(doFuture)
   require(future.apply)
-  n_cores <- 8
+  n_cores <- 12
   #plan("multisession", workers = n_cores)
   #plan("multicore", workers = n_cores) # forking
   plan("cluster", workers = n_cores)
 }
 
+# load("~/workspace/github/dcFCI_Simulations/mixed/20260112_dcfci_metrics_min.RData")
+# load("~/workspace/github/dcFCI_Simulations/mixed/20260112_dcfci_metrics_min2.RData")
+#
+# summary(dcfci_metrics_min$shd - dcfci_metrics_min2$shd)
+#
+# completed_ids <- which(dcfci_metrics_min$max_reached == FALSE) # & dcfci_metrics_min$sel_top == 3)
+# print(paste0(length(completed_ids), "/ ", nrow(dcfci_metrics_min)))
+#
+# summary(dcfci_metrics_min$shd[completed_ids] - dcfci_metrics_min2$shd[completed_ids])
+#
+# bad_ids <- which(dcfci_metrics_min$shd - dcfci_metrics_min2$shd > 0 & dcfci_metrics_min$max_reached == FALSE)
+# dcfci_metrics_min$shd[bad_ids] - dcfci_metrics_min2$shd[bad_ids]
+# dcfci_metrics_min$mec_score.2[bad_ids] - dcfci_metrics_min2$mec_score.2[bad_ids]
 
 #########################
 # Simulation Parameters #
 #########################
+
+pag_id = 1
+sim = 23
+N = 200
 
 sim_ids = 1:30
 sample_sizes = c(200, 500, 1000, 5000, 10000, 50000)
@@ -78,7 +95,7 @@ if (run_sims) {
   # Running Simulations #
   #######################
 
-  for (data_type in c("continuous")) { # c("mixed", "continuous")) {
+  for (data_type in c("mixed")) { # c("mixed", "continuous")) {
   #for (data_type in c()) {
     output_folder <- paste0("../dcFCI_Simulations/",
                           data_type, "/")
@@ -208,24 +225,34 @@ if (run_sims) {
 
           trueSepsetResults <-
             getSepsetResults(suffStat$citestResults, true.sepset)
-          minPH0 <- min(trueSepsetResults$pH0)
+          #minPH0 <- min(trueSepsetResults$pH0)
+
+
+          fd <- FCI.Utils::getFaithfulnessDegree(true.amat.pag, citestResults = suffStat$citestResults)
+          indep_ids <- which(fd$f_citestResults$type == "indep")
+          dep_ids <- which(fd$f_citestResults$type == "dep")
+
+          # tests with pH0 < minPH0 are definitely dependence
+          minPH0_id <- indep_ids[which.min(fd$f_citestResults[indep_ids, "pH0"])]
+          minPH0 <- fd$f_citestResults[minPH0_id, "pH0"]
+          # subset(fd$f_citestResults, pH0 < minPH0)
+
           pH0ThreshMin = minPH0 - 0.005
           while (round(pH0ThreshMin, digits = 2) > minPH0) {
             pH0ThreshMin = pH0ThreshMin - 0.005
           }
           pH0ThreshMin = round(pH0ThreshMin, digits = 2)
 
-          # pH0ThreshMin = 0.3
-          # if (minPH0 < 0.3) {
-          #   redoDCFCI = TRUE
-          #   pH0ThreshMin = minPH0 - 0.005
-          #   while (round(pH0ThreshMin, digits = 2) > minPH0) {
-          #     pH0ThreshMin = pH0ThreshMin - 0.005
-          #   }
-          #   pH0ThreshMin = round(pH0ThreshMin, digits = 2)
-          #   cat("Redo -- minPH0",  minPH0, "; pH0ThreshMin= ", pH0ThreshMin, "\n")
-          # }
+          # tests with pH0 > maxPH0 are definitely independence
+          maxPH0_id <- dep_ids[which.max(fd$f_citestResults[dep_ids, "pH0"])]
+          maxPH0 <- fd$f_citestResults[maxPH0_id, "pH0"]
+          # subset(fd$f_citestResults, pH0 > maxPH0)
 
+          pH0ThreshMax = maxPH0 + 0.005
+          while (round(pH0ThreshMax, digits = 2) < maxPH0) {
+            pH0ThreshMax = pH0ThreshMax + 0.005
+          }
+          pH0ThreshMax = round(pH0ThreshMax, digits = 2)
 
           ##################################
           # Assessing the true PAG metrics #
@@ -709,6 +736,7 @@ if (run_sims) {
               if (!redoDCFCI && exceeded_list_max) {
                 next
               }
+              cat("Running dcFCI , sel_top =", sel_top, "...\n")
 
               if (data_type == "continuous") {
                 dcfci_output_folder <- paste0(output_folder_sim, "dcFCI6/", "top", sel_top, "/")
@@ -729,9 +757,10 @@ if (run_sims) {
                 }
               }
 
-              redo_date <- as.POSIXct("2026-01-26 20:00:00", tz="CET")
-              if (file.exists(dcfci_out_file) && as.POSIXct(file.info(dcfci_out_file)$mtime) < redo_date) {
-                dcfci_out_file2 <- paste0(dcfci_output_folder, "dcfci_out2_", fileid, "_", eff_size_str, ".RData")
+              redo_date <- as.POSIXct("2026-01-27 17:50:00", tz="CET")
+              dcfci_out_file2 <- paste0(dcfci_output_folder, "dcfci_out2_", fileid, "_", eff_size_str, ".RData")
+              if (file.exists(dcfci_out_file2) ||
+                (file.exists(dcfci_out_file) && as.POSIXct(file.info(dcfci_out_file)$mtime) < redo_date)) {
                 if (file.exists(dcfci_out_file2)) {
                   load(dcfci_out_file2)
                 } else {
@@ -777,10 +806,14 @@ if (run_sims) {
                   as.POSIXct(file.info(dcfci_out_file)$mtime) < redo_date) {
                 # m.max = Inf; fixedGaps = NULL; fixedEdges = NULL;
                 # verbose = 2; sel_top = 1; prob_sel_top = FALSE; run_parallel = TRUE;
-                # allowNewTests=TRUE; pH0ThreshMin=0.3; pH0ThreshMax=1; list.max = 500;
+                # allowNewTests=TRUE;
+                # pH0ThreshMin = pH0ThreshMin; pH0ThreshMax = pH0ThreshMax; list.max = 500;
+                # #pH0ThreshMin=0.3; pH0ThreshMax=1; list.max = 500;
                 # log_folder = file.path(getwd(), "tmp", "logs")
                 # sapply(list.files("./R", full.names = T), source)
 
+                cat("Running dcFCI , sel_top =", sel_top, "with pH0ThreshMin: ",
+                    pH0ThreshMin, "and pH0ThreshMax", pH0ThreshMax, "\n")
                 start_time <- proc.time()
                 dcfci_out <- dcFCI(suffStat, indepTest, labels, alpha,
                                    m.max = Inf,
@@ -789,9 +822,9 @@ if (run_sims) {
                                    prob_sel_top = FALSE,
                                    run_parallel = TRUE,
                                    allowNewTests=TRUE,
-                                   list.max = 1000,
-                                   pH0ThreshMin = min(0.3, pH0ThreshMin),
-                                   pH0ThreshMax = 1,
+                                   list.max = 500,
+                                   pH0ThreshMin = max(0.1, pH0ThreshMin), # min(0.5, pH0ThreshMin),
+                                   pH0ThreshMax = max(0.15, pH0ThreshMax), # 1,
                                    combine_mse = TRUE,
                                    log_folder = file.path(dcfci_output_folder, "tmp", "logs"))
                 end_time <- proc.time()
@@ -821,9 +854,14 @@ if (run_sims) {
               metrics_out <- getDCFCIMetrics(dcfci_out, eval_dat,
                                              suffStat$citestResults, true.amat.pag,
                                              checkViolations = FALSE)
-              cat("\n dcFCI SHD: ", metrics_out$dcfci_metrics_mean$shd, "min: ", metrics_out$dcfci_metrics_min$shd, "\n")
-              cat("\n dcFCI mec_score_up: ", metrics_out$dcfci_metrics_mean$mec_score.2, "\n")
-              cat("\n dcFCI mec_score_1mse: ", 1 - metrics_out$dcfci_metrics_min$mec_score_mse, "\n")
+              cat("\n dcFCI SHD -- mean: ", metrics_out$dcfci_metrics_mean$shd,
+                  "min: ", metrics_out$dcfci_metrics_min$shd, "\n")
+              cat("\n dcFCI mec_score_up -- mean ", metrics_out$dcfci_metrics_mean$mec_score.2,
+                  "min:", metrics_out$dcfci_metrics_min$mec_score.2, "\n")
+              cat("\n dcFCI mec_score_1mse -- mean ", 1-  metrics_out$dcfci_metrics_mean$mec_score_mse,
+                  "min:", 1 - metrics_out$dcfci_metrics_min$mec_score_mse, "\n")
+
+
               if (runTrueMetrics) {
                 cat("\n true mec_score_up: ", true_mec_score$frechetUB, "\n")
               }

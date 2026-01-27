@@ -792,16 +792,22 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
       mec_score_df$pag_list_id <- 1:length(pag_List)
       ord_pag_list_score_df$pag_list_id <- 1:length(pag_List)
 
+      top_ids <- getTopPagIds(ord_pag_list_score_df,
+                               mec_score_df = mec_score_df,
+                               ord-1, sel_top, prob_sel_top,
+                               combine_mse = combine_mse)
+
+
       #selects those with top mec_score upper bound at the last iteration
-      if (prob_sel_top) {
-        top_ids <- which(mec_score_df$prob_index <= prob_sel_top &
-                           mec_score_df$violations == FALSE &
-                           mec_score_df$duplicated == FALSE)
-      } else {
-        top_ids <- which(mec_score_df$index <= sel_top &
-                           mec_score_df$violations == FALSE &
-                           mec_score_df$duplicated == FALSE)
-      }
+      # if (prob_sel_top) {
+      #   top_ids <- which(mec_score_df$prob_index <= prob_sel_top &
+      #                      mec_score_df$violations == FALSE &
+      #                      mec_score_df$duplicated == FALSE)
+      # } else {
+      #   top_ids <- which(mec_score_df$index <= sel_top &
+      #                      mec_score_df$violations == FALSE &
+      #                      mec_score_df$duplicated == FALSE)
+      # }
       top_dcPAGs <- pag_List[top_ids]
       top_scoresDF <- mec_score_df[top_ids,]
     }

@@ -497,7 +497,7 @@ getTopPagIds <- function(ord_pag_list_score_df,
               # ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_up")] > 0 &
               ord_pag_list_score_df$index <= sel_top), "pag_list_id"]
 
-    union_pag_ids <- top_ord_score_pag_ids
+    #union_pag_ids <- top_ord_score_pag_ids
     if (!is.null(mec_score_df)) {
       # getting the top "sel_top" pags according to the mec PAG score.
       top_mec_score_pag_ids <- mec_score_df[
@@ -505,7 +505,7 @@ getTopPagIds <- function(ord_pag_list_score_df,
               #mec_score_df$duplicated == FALSE &
               mec_score_df$index <= sel_top), "pag_list_id"]
       # all top PAGs according to the available scores
-      union_pag_ids <- union(top_ord_score_pag_ids, top_mec_score_pag_ids)
+      #union_pag_ids <- union(top_ord_score_pag_ids, top_mec_score_pag_ids)
     }
   } else if (prob_sel_top >= 1)  {
     top_ord_score_pag_ids <- ord_pag_list_score_df[
@@ -514,13 +514,13 @@ getTopPagIds <- function(ord_pag_list_score_df,
               # ord_pag_list_score_df[, paste0("ord", ord, "_symmdiff_score_up")] > 0 &
               ord_pag_list_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
 
-    union_pag_ids <- top_ord_score_pag_ids
+    #union_pag_ids <- top_ord_score_pag_ids
     if (!is.null(mec_score_df)) {
       top_mec_pag_ids <- mec_score_df[
         which(mec_score_df$violation == FALSE &
               #mec_score_df$duplicated == FALSE &
               mec_score_df$prob_index <= as.numeric(prob_sel_top)), "pag_list_id"]
-      union_pag_ids <- union(top_ord_score_pag_ids, top_mec_score_pag_ids)
+      #union_pag_ids <- union(top_ord_score_pag_ids, top_mec_score_pag_ids)
     }
   } else {
     stop("Use a numeric value for prob_sel_top to select PAGs based on their score interval.")
@@ -577,57 +577,98 @@ getTopPagIds <- function(ord_pag_list_score_df,
     }
   }
 
-  min_ord_pag_score_up <- min(subset(
-    ord_pag_list_score_df, pag_list_id %in% union_pag_ids)[, agg_scores_up[1]])
-  if (!combine_mse) {
-    min_ord_pag_score_1mse <- min(subset(
-      ord_pag_list_score_df, pag_list_id %in% union_pag_ids)[, agg_scores_up[2]])
-  }
 
-  if (!is.null(mec_score_df)) {
-    if (!combine_mse) {
-      min_mec_score_up <- min(subset(
-        mec_score_df, pag_list_id %in% union_pag_ids)[, agg_scores_up[3]])
-      min_mec_score_1mse <- min(subset(
-        mec_score_df, pag_list_id %in% union_pag_ids)[, agg_scores_up[4]])
-    } else {
-      min_mec_score_up <- min(subset(
-        mec_score_df, pag_list_id %in% union_pag_ids)[, agg_scores_up[2]])
-    }
-  }
+  #####################
+  # New attempt ...
+  #####################
 
-  # Now, we select all PAGs that are better than such selected PAGs in any of the available scores
- if (!combine_mse) {
-  top_dc_pag_ids <- ord_pag_list_score_df[
-    which(ord_pag_list_score_df$violation == FALSE &
-            ord_pag_list_score_df[, agg_scores_up[1]] >= min_ord_pag_score_up &
-            ord_pag_list_score_df[, agg_scores_up[2]] >= min_ord_pag_score_1mse),
-    "pag_list_id"]
- } else {
-   top_dc_pag_ids <- ord_pag_list_score_df[
-     which(ord_pag_list_score_df$violation == FALSE &
-             ord_pag_list_score_df[, agg_scores_up[1]] >= min_ord_pag_score_up),
-     "pag_list_id"]
- }
+  # get all ids that share the union_score_up of that one with the highest
+  # agg_symmdiff_up_1mse or agg_union_up_1mse
 
-  if (!is.null(mec_score_df)) {
-    if (!combine_mse) {
-      top_dc_pag_ids <- union(top_dc_pag_ids, mec_score_df[which(
-        mec_score_df$violation == FALSE &
-          #mec_score_df$duplicated == FALSE &
-          mec_score_df[, agg_scores_up[3]] >= min_mec_score_up &
-          mec_score_df[, agg_scores_up[4]] >= min_mec_score_1mse),
-        "pag_list_id"])
-    } else {
-      top_dc_pag_ids <- union(top_dc_pag_ids, mec_score_df[which(
-        mec_score_df$violation == FALSE &
-          #mec_score_df$duplicated == FALSE &
-          mec_score_df[, agg_scores_up[2]] >= min_mec_score_up),
-        "pag_list_id"])
-    }
-  }
+  # best_agg_score_up_1_ids <- which.max(ord_pag_list_score_df[, "agg_symmdiff_up_1mse"])
+  # best_agg_score_up_2_ids <- which.max(ord_pag_list_score_df[, "agg_union_up_1mse"])
+  # best_pag_ids <- ord_pag_list_score_df[union(best_agg_score_up_1_ids, best_agg_score_up_2_ids), "pag_list_id"]
+  #
+  # min_union_score_up <-  min(subset(ord_pag_list_score_df, pag_list_id %in% best_pag_ids)[, paste0("ord", ord, "_union_score_up")])
+  # min_mec_score_up <-  min(subset(mec_score_df, pag_list_id %in% best_pag_ids)[, paste0("ord", ord, "_mec_score_up")])
+  #
 
-  top_dc_pag_ids <- subset(ord_pag_list_score_df, pag_list_id %in% top_dc_pag_ids &
+
+  min_union_score_up <- min(subset(ord_pag_list_score_df, pag_list_id %in% top_ord_score_pag_ids)[, paste0("ord", ord, "_union_score_up")])
+  min_mec_score_up <-  min(subset(mec_score_df, pag_list_id %in% top_mec_score_pag_ids)[, paste0("ord", ord, "_mec_score_up")])
+
+  top_union_score_up_ids <- ord_pag_list_score_df[which(ord_pag_list_score_df[, paste0("ord", ord, "_union_score_up")]
+                          >= min_union_score_up), "pag_list_id"]
+  top_mec_score_up_ids <- mec_score_df[which(mec_score_df[, paste0("ord", ord, "_mec_score_up")]
+                                                        >= min_mec_score_up), "pag_list_id"]
+
+  # max_mec_score_up <- mec_score_df[which.max(mec_score_df[, paste0("ord", ord, "_mec_score_up")]), paste0("ord", ord, "_mec_score_up")]
+  # top1_mec_pag_ids <- mec_score_df[which(mec_score_df[, paste0("ord", ord, "_mec_score_up")] >= max_mec_score_up), "pag_list_id"]
+
+  top_ord_pag_ids <- intersect(top_union_score_up_ids, top_mec_score_up_ids)
+  top_dc_pag_ids <- unique(c(top_ord_pag_ids, top_mec_score_pag_ids, top_ord_score_pag_ids))
+
+  min_score_considered <- min(subset(ord_pag_list_score_df, pag_list_id %in% top_dc_pag_ids)[, "agg_symmdiff_up_1mse"])
+  top_dc_pag_ids <- unique(c(top_dc_pag_ids,
+                           ord_pag_list_score_df[which(ord_pag_list_score_df$agg_symmdiff_up_1mse >= min_score_considered), "pag_list_id"]))
+
+
+ #  #####################
+ #  # Failed attempt ...
+ #  #####################
+ #  min_ord_pag_score_up <- min(subset(
+ #    ord_pag_list_score_df, pag_list_id %in% union_pag_ids)[, agg_scores_up[1]])
+ #  if (!combine_mse) {
+ #    min_ord_pag_score_1mse <- min(subset(
+ #      ord_pag_list_score_df, pag_list_id %in% union_pag_ids)[, agg_scores_up[2]])
+ #  }
+ #
+ #  if (!is.null(mec_score_df)) {
+ #    if (!combine_mse) {
+ #      min_mec_score_up <- min(subset(
+ #        mec_score_df, pag_list_id %in% union_pag_ids)[, agg_scores_up[3]])
+ #      min_mec_score_1mse <- min(subset(
+ #        mec_score_df, pag_list_id %in% union_pag_ids)[, agg_scores_up[4]])
+ #    } else {
+ #      min_mec_score_up <- min(subset(
+ #        mec_score_df, pag_list_id %in% union_pag_ids)[, agg_scores_up[2]])
+ #    }
+ #  }
+ #
+ #  # Now, we select all PAGs that are better than such selected PAGs in any of the available scores
+ # if (!combine_mse) {
+ #  top_dc_pag_ids <- ord_pag_list_score_df[
+ #    which(ord_pag_list_score_df$violation == FALSE &
+ #            ord_pag_list_score_df[, agg_scores_up[1]] >= min_ord_pag_score_up &
+ #            ord_pag_list_score_df[, agg_scores_up[2]] >= min_ord_pag_score_1mse),
+ #    "pag_list_id"]
+ # } else {
+ #   top_dc_pag_ids <- ord_pag_list_score_df[
+ #     which(ord_pag_list_score_df$violation == FALSE &
+ #             ord_pag_list_score_df[, agg_scores_up[1]] >= min_ord_pag_score_up),
+ #     "pag_list_id"]
+ # }
+ #
+ #  if (!is.null(mec_score_df)) {
+ #    if (!combine_mse) {
+ #      top_dc_pag_ids <- union(top_dc_pag_ids, mec_score_df[which(
+ #        mec_score_df$violation == FALSE &
+ #          #mec_score_df$duplicated == FALSE &
+ #          mec_score_df[, agg_scores_up[3]] >= min_mec_score_up &
+ #          mec_score_df[, agg_scores_up[4]] >= min_mec_score_1mse),
+ #        "pag_list_id"])
+ #    } else {
+ #      top_dc_pag_ids <- union(top_dc_pag_ids, mec_score_df[which(
+ #        mec_score_df$violation == FALSE &
+ #          #mec_score_df$duplicated == FALSE &
+ #          mec_score_df[, agg_scores_up[2]] >= min_mec_score_up),
+ #        "pag_list_id"])
+ #    }
+ #  }
+
+  top_dc_pag_ids <- subset(ord_pag_list_score_df,
+                           pag_list_id %in% top_dc_pag_ids &
+                           violations == FALSE &
                            duplicated == FALSE)$pag_list_id
   return(top_dc_pag_ids)
 }

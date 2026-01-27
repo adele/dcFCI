@@ -1,12 +1,22 @@
 getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag, checkViolations=TRUE) {
-  top_mec_score_up <- dcfci_out$mec_score_df[1,1]
-  top_mec_score_1mse <- dcfci_out$mec_score_df[1,2]
+
+  if (!is.null(dcfci_out$order_processed)) {
+    rank_score <- paste0("ord",  dcfci_out$order_processed, "_mec_score_up")
+  } else {
+    rank_score <- colnames(dcfci_out$mec_score_df)[1]
+  }
+  top_mec_score_up <- dcfci_out$mec_score_df[1,rank_score]
+  #top_mec_score_1mse <- dcfci_out$mec_score_df[1,2]
 
   index1_pags <- dcfci_out$allPAGList[
-    which(dcfci_out$mec_score_df[,1] >= top_mec_score_up &
+    which(dcfci_out$mec_score_df[,rank_score] >= top_mec_score_up &
           #dcfci_out$mec_score_df[,2] >= top_mec_score_1mse &
           dcfci_out$mec_score_df$violations == FALSE &
           dcfci_out$mec_score_df$duplicated == FALSE)]
+
+  if (length(index1_pags) < length(dcfci_out$top_dcPAGs)) {
+    index1_pags <- dcfci_out$top_dcPAGs
+  }
 
   probindex1_pags <- dcfci_out$allPAGList[
     which(dcfci_out$mec_score_df$prob_index == 1 &
@@ -52,7 +62,9 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag, checkV
 
   cur_dcfci_metrics_min <- cur_dcfci_metrics_mean <- cur_dcfci_metrics
   if (dim(cur_dcfci_metrics)[1] > 1) {
-    cur_dcfci_metrics_min <- as.data.frame(t(sapply(cur_dcfci_metrics, min)))
+    min_shd <- which.min(cur_dcfci_metrics$shd)
+    cur_dcfci_metrics_min <- cur_dcfci_metrics[min_shd, ]
+    #cur_dcfci_metrics_min <- as.data.frame(t(sapply(cur_dcfci_metrics, min)))
     cur_dcfci_metrics_mean <- as.data.frame(t(colMeans(cur_dcfci_metrics)))
   }
 
