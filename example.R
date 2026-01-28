@@ -13,9 +13,10 @@ run_parallel = TRUE
 if (run_parallel) {
   require(doFuture)
   require(future.apply)
-  n_cores <- 12 # change to the number of cores/CPU available
-  #plan("multisession", workers = n_cores)
-  plan("multicore", workers = n_cores) # forking
+  n_cores <- 2 # change to the number of cores/CPU available
+  #plan("multisession", workers = n_cores) # to run on RStudio
+  plan("multicore", workers = n_cores) # using forking on RStudio
+  #plan("cluster", workers = n_cores) # to run on a server / terminal
 }
 
 #####################
@@ -61,19 +62,19 @@ if (run_paper_example) {
   # For interesting examples with N == 1000:
   selected_seed = TRUE
   if (selected_seed && N == 1000 && data_type == "mixed") {
-    cur_seed <- 735706305
+    seed <- 735706305
   } else if (selected_seed && N == 1000 && data_type == "continuous") {
-    cur_seed <- 47555208
+    seed <- 47555208
   } else {
-    cur_seed <- sample(1:.Machine$integer.max, 1)
+    seed <- sample(1:.Machine$integer.max, 1)
   }
 
   dat <- NULL
   while (is.null(dat)) {
     if (!selected_seed) {
-      cur_seed <- sample(1:.Machine$integer.max, 1)
+      seed <- sample(1:.Machine$integer.max, 1)
     }
-    set.seed(cur_seed)
+    set.seed(seed)
 
     f.args <- NULL
     if (data_type == "mixed") {
@@ -105,11 +106,16 @@ indepTest <- mixedCITest
 
 suffStat <- getMixedCISuffStat(dat, vars_names, covs_names)
 vars_df <- dat[,vars_names, drop=FALSE]
-citestResults <- getAllCITestResults(vars_df, indepTest, suffStat,
-                                     m.max=Inf, computeProbs = TRUE,
-                                     eff_size = 0.05 # ensures a minimum effect size
-                                     #eff_size = NULL # uses max RMSE
-                                     )
+
+citestResults <- getAllCITestResults(
+  vars_df, indepTest, suffStat, m.max = Inf, # limit m.max for larger graphs
+  computeProbs = TRUE,        # Required if running dcFCI
+  eff_size = 0.05,            # Minimum effect size threshold when computeProbs = TRUE
+  fileid = paste("example_seed_", seed),  # Unique identifier for the dataset / analysis
+  recover_citestResults = TRUE, # Set TRUE to resume computation after a crash
+  results_folder= file.path(getwd(), "tmp","citestsResults"), # same as default -- change if needed
+  log_folder = file.path(getwd(), "tmp", "logs")) # same as default -- change if needed
+
 
 suffStat$citestResults <- citestResults # so we don´t redo tests later
 
@@ -197,11 +203,13 @@ time_taken <- end_time - start_time
 cat("\n\n dcFCI runtime: ", time_taken, "\n\n")
 
 
-top_dcfci_pag <- fit_dcfci$allPAGList[[1]]$amat.pag
-top_dcfci_sepset <- fit_dcfci$allPAGList[[1]]$sepset
+length(fit_dcfci$top_dcPAGs)
 
-# renderAG(top_dcfci_pag, add_index = FALSE)
-# formatSepset(top_dcfci_sepset)
+top_dcfci_pag <- fit_dcfci$allPAGList[[1]]$amat.pag
+renderAG(top_dcfci_pag, add_index = FALSE)
+
+top_dcfci_sepset <- fit_dcfci$allPAGList[[1]]$sepset
+formatSepset(top_dcfci_sepset)
 
 dcfci_metrics <- getMetrics(true.amat.pag, top_dcfci_pag,
                             est.sepset=top_dcfci_sepset,
@@ -218,8 +226,8 @@ head(validPAGScores, 10) # Top 10 PAGs
 #validPAGScores # All evaluated PAGs
 
 # sepsets that led to valid PAGs, ranked by MEC-Targeted PAG score
-lapply(fit_dcfci$allPAGList[validPAGScores$pag_list_id],
-       function(x) {formatSepset(x$sepset)})
+#lapply(fit_dcfci$allPAGList[validPAGScores$pag_list_id],
+#       function(x) {formatSepset(x$sepset)})
 
 
 

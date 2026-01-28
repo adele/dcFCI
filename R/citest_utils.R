@@ -34,6 +34,7 @@ getCITestResultsHelper <- function(x, y, Sxy, citestResults) {
 getCITestResults <- function(x, y, Sxy, citestResults, indepTest, suffStat,
                              verbose=FALSE, allowNewTests=TRUE) {
   pvalue = pH0 = pH1 = NULL
+  chi2stat = df = NULL # default will be used for LR GLM-based CI Test
 
   sortedxy <- sort(c(x,y))
   x <- sortedxy[1]
@@ -67,7 +68,6 @@ getCITestResults <- function(x, y, Sxy, citestResults, indepTest, suffStat,
 
       testXY.S <- indepTest(x, y, Sxy, suffStat)
 
-      chiSqStat = df = NULL # default will be used for LR GLM-based CI Test
       if (suffStat$retall) {
         pvalue <- testXY.S$p
         if (suffStat$method == "nnGCM") {

@@ -741,21 +741,12 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                                      ord, sel_top, prob_sel_top,
                                      combine_mse = combine_mse)
 
-      # subset(mec_score_df, pag_list_id %in% top_dc_pag_ids)
-      # subset(ord_pag_list_score_df, pag_list_id %in% top_dc_pag_ids)
-
       # Adding to the pag_List all processed PAG that have some violation or
       # are not the best of the current order.
       pag_List <- c(pag_List, cur_ord_pag_list[-top_dc_pag_ids])
 
-      #lapply(cur_ord_pag_list, function(x) {formatSepset(x$sepset)})
-      #sapply(pag_List, function(x) {x$curord})
-
       # The other ones proceed to the next order.
       cur_ord_pag_list <- cur_ord_pag_list[top_dc_pag_ids]
-
-      #lapply(cur_ord_pag_list, function(x) {formatSepset(x$sepset)})
-      #sapply(cur_ord_pag_list, function(x) {x$curord})
 
       ord = ord + 1
       if (verbose)
@@ -797,17 +788,6 @@ dcFCI <- function(suffStat, indepTest, labels, alpha=0.05,
                                ord-1, sel_top, prob_sel_top,
                                combine_mse = combine_mse)
 
-
-      #selects those with top mec_score upper bound at the last iteration
-      # if (prob_sel_top) {
-      #   top_ids <- which(mec_score_df$prob_index <= prob_sel_top &
-      #                      mec_score_df$violations == FALSE &
-      #                      mec_score_df$duplicated == FALSE)
-      # } else {
-      #   top_ids <- which(mec_score_df$index <= sel_top &
-      #                      mec_score_df$violations == FALSE &
-      #                      mec_score_df$duplicated == FALSE)
-      # }
       top_dcPAGs <- pag_List[top_ids]
       top_scoresDF <- mec_score_df[top_ids,]
     }
@@ -1022,173 +1002,6 @@ rankPAGList <- function(pag_list, max_ord,
 
   return(new_scores_df)
 }
-
-#
-# rankPAGListOLD2 <- function(pag_list, max_ord, scores_df=NULL,
-#                         score_name="ord_symm_diff_score",
-#                         score_len = 3,
-#                         score_labels = c("_score_lb", "_score_1-mse", "_score_up")) {
-#
-#   if (is.null(scores_df)) {
-#     scores_df <- getPAGListScores(pag_list, score_name, score_len)
-#   }
-#
-#   ord_scores_cols_list <- lapply(scores_df$cur_ord_pag_scores, fromJSON)
-#   all_scores <- data.frame()
-#   for (i in seq_along(ord_scores_cols_list)) {
-#     cur_ord_scores <- ord_scores_cols_list[[i]]
-#     ord_ints <- c()
-#     for (j in 0:(max_ord)) {
-#       cur_int <- (cur_ord_scores[[as.character(j)]])
-#       if (is.null(cur_int) || length(cur_int) == 0) {
-#         cur_int <- rep(NA, score_len)
-#       }
-#       ord_ints <- c(ord_ints, cur_int)
-#     }
-#     all_scores <- rbind.data.frame(all_scores, ord_ints)
-#   }
-#   all_scores <- as.data.frame(all_scores)
-#
-#
-#
-#
-#   # last computed score is the product of all
-#   colnames(all_scores) <- c(
-#       paste0("ord", rep(0:max_ord, each=score_len),
-#            rep(score_labels, max_ord + 1)))
-#
-#   row.names(all_scores) <- NULL
-#
-#   if (grepl("mse", score_name, fixed=TRUE)) { # score_name:  ord_symm_diff_mse" or "mec_mse") {
-#     tmp_scores <- cbind.data.frame(
-#       all_scores[, c(seq(ncol(all_scores), 1, by=-1)), drop = FALSE],
-#       pag_list_id=1:nrow(all_scores))
-#     ordered_ids <- dplyr::arrange_all(tmp_scores)$pag_list_id
-#   } else {
-#     ordered_labels <- c()
-#     for (cur_ord in seq(max_ord,0,-1)) {
-#       ordered_labels <- c(ordered_labels,
-#                           paste0("ord", cur_ord, c("_score_up", "_score_1-mse")))
-#     }
-#     for (cur_ord in seq(max_ord,0,-1)) {
-#       ordered_labels <- c(ordered_labels,
-#                           paste0("ord", cur_ord, "_score_lb"))
-#     }
-#     tmp_scores <- cbind.data.frame(
-#       all_scores[, ordered_labels, drop = FALSE],
-#       pag_list_id=1:nrow(all_scores))
-#
-#     ordered_ids <- dplyr::arrange_all(tmp_scores, dplyr::desc)$pag_list_id
-#   }
-#
-#
-#   tmp_scores[, "violations"] <- scores_df$violation
-#   tmp_scores <- tmp_scores[ordered_ids, ]
-#
-#   # all_scores are sorted already...
-#   index_start_ids <- which(!duplicated(tmp_scores[,-which(colnames(tmp_scores) == "pag_list_id")]))
-#   tmp_scores[index_start_ids, "index"] <- 1:length(index_start_ids)
-#   for (i in 1:nrow(tmp_scores)) {
-#     if (is.na(tmp_scores[i, "index"])) {
-#       tmp_scores[i, "index"] <- tmp_scores[i-1, "index"]
-#     }
-#   }
-#
-#   if (grepl("mse", score_name, fixed=TRUE)) {
-#     new_scores_df <- tmp_scores
-#   } else {
-#     prob_indices <- getProbIndices(
-#       tmp_scores[, paste0("ord", max_ord, "_score_lb")],
-#       tmp_scores[, paste0("ord", max_ord, "_score_up")])
-#     new_scores_df <- cbind(tmp_scores,
-#                            "prob_index"= prob_indices)
-#   }
-#
-#   unique_pag_ids <- getUniquePAGList(
-#     pag_list[new_scores_df$pag_list_id], key="amat")$ids
-#   new_scores_df$duplicated <- TRUE
-#   new_scores_df[unique_pag_ids, "duplicated"] <- FALSE
-#
-#   return(new_scores_df)
-# }
-#
-#
-# rankPAGListOLD <- function(pag_list, max_ord, scores_df=NULL,
-#                         score_name="ord_symm_diff_score",
-#                         score_len = 2,
-#                         score_labels = c("_score_lb", "_score_up")) {
-#
-#   if (is.null(scores_df)) {
-#     scores_df <- getPAGListScores(pag_list, score_name, score_len)
-#   }
-#
-#   ord_scores_cols_list <- lapply(scores_df$cur_ord_pag_scores, fromJSON)
-#   all_scores <- data.frame()
-#   for (i in seq_along(ord_scores_cols_list)) {
-#     cur_ord_scores <- ord_scores_cols_list[[i]]
-#     ord_ints <- c()
-#     for (j in 0:(max_ord)) {
-#       cur_int <- (cur_ord_scores[[as.character(j)]])
-#       if (is.null(cur_int) || length(cur_int) == 0) {
-#         cur_int <- rep(NA, score_len)
-#       }
-#       ord_ints <- c(ord_ints, cur_int)
-#     }
-#     all_scores <- rbind.data.frame(all_scores, ord_ints)
-#   }
-#   all_scores <- as.data.frame(all_scores)
-#
-#
-#   # last computed score is the product of all
-#   colnames(all_scores) <- c(
-#     paste0("ord", rep(0:max_ord, each=score_len),
-#            rep(score_labels, max_ord + 1)))
-#
-#   row.names(all_scores) <- NULL
-#
-#   if (grepl("mse", score_name, fixed=TRUE)) { # score_name:  ord_symm_diff_mse" or "mec_mse") {
-#     tmp_scores <- cbind.data.frame(
-#       all_scores[, c(seq(ncol(all_scores), 1, by=-1)), drop = FALSE],
-#       pag_list_id=1:nrow(all_scores))
-#     ordered_ids <- dplyr::arrange_all(tmp_scores)$pag_list_id
-#   } else {
-#     tmp_scores <- cbind.data.frame(
-#       all_scores[, c(seq(ncol(all_scores), 2, by=-2), seq(ncol(all_scores)-1, 1, by=-2)), drop = FALSE],
-#       pag_list_id=1:nrow(all_scores)
-#     )
-#     ordered_ids <- dplyr::arrange_all(tmp_scores, dplyr::desc)$pag_list_id
-#   }
-#
-#
-#   tmp_scores[, "violations"] <- scores_df$violation
-#   tmp_scores <- tmp_scores[ordered_ids, ]
-#
-#   # all_scores are sorted already...
-#   index_start_ids <- which(!duplicated(tmp_scores[,-which(colnames(tmp_scores) == "pag_list_id")]))
-#   tmp_scores[index_start_ids, "index"] <- 1:length(index_start_ids)
-#   for (i in 1:nrow(tmp_scores)) {
-#     if (is.na(tmp_scores[i, "index"])) {
-#       tmp_scores[i, "index"] <- tmp_scores[i-1, "index"]
-#     }
-#   }
-#
-#   if (grepl("mse", score_name, fixed=TRUE)) {
-#     new_scores_df <- tmp_scores
-#   } else {
-#     prob_indices <- getProbIndices(
-#       tmp_scores[, paste0("ord", max_ord, "_score_lb")],
-#       tmp_scores[, paste0("ord", max_ord, "_score_up")])
-#     new_scores_df <- cbind(tmp_scores,
-#                            "prob_index"= prob_indices)
-#   }
-#
-#   unique_pag_ids <- getUniquePAGList(pag_list, key="amat")$ids
-#   new_scores_df$duplicated <- TRUE
-#   new_scores_df[unique_pag_ids,"duplicated"] <- FALSE
-#
-#
-#   return(new_scores_df)
-# }
 
 getAllPotSepsetsXY <- function(x, y, amat.pag, m.max=Inf, verbose=TRUE) {
   done = FALSE

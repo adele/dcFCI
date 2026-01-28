@@ -24,14 +24,25 @@ if (run_parallel) {
   plan("cluster", workers = n_cores)
 }
 
+# load("~/workspace/github/dcFCI_Simulations/mixed/20260112_miicss_metrics.RData")
+# load("~/workspace/github/dcFCI_Simulations/mixed/20260112_true_pag_metrics.RData")
 # load("~/workspace/github/dcFCI_Simulations/mixed/20260112_dcfci_metrics_min.RData")
 # load("~/workspace/github/dcFCI_Simulations/mixed/20260112_dcfci_metrics_min2.RData")
+# load("~/workspace/github/dcFCI_Simulations/mixed/20260112_dcfci_metrics.RData")
+# load("~/workspace/github/dcFCI_Simulations/mixed/20260112_dcfci_metrics2.RData")
+#
+# length(which(dcfci_metrics_min$shd == 0))
+# dcfci_metrics[(which(dcfci_metrics_min$fdr == 0 & dcfci_metrics_min$fomr == 0 &
+#                dcfci_metrics_min$shd > 0)),]
 #
 # summary(dcfci_metrics_min$shd - dcfci_metrics_min2$shd)
+# summary(dcfci_metrics_min$mec_score.2 - dcfci_metrics_min2$mec_score.2)
 #
 # completed_ids <- which(dcfci_metrics_min$max_reached == FALSE) # & dcfci_metrics_min$sel_top == 3)
 # print(paste0(length(completed_ids), "/ ", nrow(dcfci_metrics_min)))
 #
+#
+# summary(dcfci_metrics_min$shd[-completed_ids] - dcfci_metrics_min2$shd[-completed_ids])
 # summary(dcfci_metrics_min$shd[completed_ids] - dcfci_metrics_min2$shd[completed_ids])
 #
 # bad_ids <- which(dcfci_metrics_min$shd - dcfci_metrics_min2$shd > 0 & dcfci_metrics_min$max_reached == FALSE)
@@ -41,10 +52,6 @@ if (run_parallel) {
 #########################
 # Simulation Parameters #
 #########################
-
-pag_id = 1
-sim = 23
-N = 200
 
 sim_ids = 1:30
 sample_sizes = c(200, 500, 1000, 5000, 10000, 50000)
@@ -59,6 +66,10 @@ pag_ids <- 1:length(true_pags_list)
 restore_files = TRUE
 restore_suffStat = TRUE
 debug = FALSE
+
+# check_processed: TRUE, skips directly;
+#                  FALSE, loads pre-computed files and computes metrics again
+check_processed = TRUE
 
 ####################
 
@@ -86,9 +97,6 @@ runOrdMECFaithfDegree <- TRUE
 
 run_plots = FALSE
 
-# check_processed: TRUE, skips directly;
-#                  FALSE, loads pre-computed files and computes metrics again
-check_processed = FALSE
 
 if (run_sims) {
   #######################
