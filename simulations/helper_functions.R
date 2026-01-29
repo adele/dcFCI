@@ -1,11 +1,15 @@
 getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag, checkViolations=TRUE) {
-
   if (!is.null(dcfci_out$order_processed)) {
     rank_score <- paste0("ord",  dcfci_out$order_processed, "_mec_score_up")
   } else {
     rank_score <- colnames(dcfci_out$mec_score_df)[1]
   }
+
+  #valid_scores <- dcfci_out$mec_score_df[, c(rank_score, "pag_list_id")]
+  #valid_scores <- valid_scores[complete.cases(valid_scores), ]
+
   top_mec_score_up <- dcfci_out$mec_score_df[1,rank_score]
+
   #top_mec_score_1mse <- dcfci_out$mec_score_df[1,2]
 
   index1_pags <- dcfci_out$allPAGList[
@@ -14,9 +18,9 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag, checkV
           dcfci_out$mec_score_df$violations == FALSE &
           dcfci_out$mec_score_df$duplicated == FALSE)]
 
-  if (length(index1_pags) < length(dcfci_out$top_dcPAGs)) {
-    index1_pags <- dcfci_out$top_dcPAGs
-  }
+  # if (length(index1_pags) < length(dcfci_out$top_dcPAGs)) {
+  #   index1_pags <- dcfci_out$top_dcPAGs
+  # }
 
   probindex1_pags <- dcfci_out$allPAGList[
     which(dcfci_out$mec_score_df$prob_index == 1 &
@@ -68,6 +72,18 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag, checkV
     cur_dcfci_metrics_mean <- as.data.frame(t(colMeans(cur_dcfci_metrics)))
   }
 
+  top1_pags <- which(rank(1 - dcfci_out$mec_score_df$agg_mec_up_1mse,
+                          ties.method = "min") == 1)
+  ntop1_pags <- length(top1_pags)
+  cur_dcfci_metrics_top1_min <- cur_dcfci_metrics_top1_mean <- cur_dcfci_metrics[top1_pags, ]
+  if (ntop1_pags > 1) {
+    min_shd <- which.min(cur_dcfci_metrics_top1_min$shd)
+    cur_dcfci_metrics_top1_min <- cur_dcfci_metrics_top1_min[min_shd, ]
+    #cur_dcfci_metrics_min <- as.data.frame(t(sapply(cur_dcfci_metrics, min)))
+    cur_dcfci_metrics_top1_mean <- as.data.frame(t(colMeans(cur_dcfci_metrics_top1_mean)))
+  }
+
+
 
   time_taken <- if (length(dcfci_out$elapsed_time) == 1) {
       as.numeric(dcfci_out$elapsed_time)
@@ -100,8 +116,31 @@ getDCFCIMetrics <- function(dcfci_out, dat, citestResults, true.amat.pag, checkV
     ntop = ntop,
     nprobtop=nprobtop)
 
+  cur_dcfci_metrics_top1_mean <- cbind.data.frame(
+    cur_dcfci_metrics_top1_mean,
+    truePAGInd=truePAGInd,
+    truePAGProbInd = truePAGProbInd,
+    max_ord =  dcfci_out$order_processed,
+    max_reached = dcfci_out$exceeded_list_max,
+    time_taken = time_taken,
+    npags = length(dcfci_out$allPAGList),
+    ntop = ntop1_pags,
+    nprobtop=nprobtop)
+
+  cur_dcfci_metrics_top1_min <- cbind.data.frame(
+    cur_dcfci_metrics_top1_min,
+    truePAGInd=truePAGInd,
+    truePAGProbInd = truePAGProbInd,
+    max_ord =  dcfci_out$order_processed,
+    max_reached = dcfci_out$exceeded_list_max,
+    time_taken = time_taken,
+    npags = length(dcfci_out$allPAGList),
+    ntop = ntop1_pags,
+    nprobtop=nprobtop)
 
   return(list(dcfci_metrics_mean=cur_dcfci_metrics_mean,
               dcfci_metrics_min=cur_dcfci_metrics_min,
+              dcfci_metrics_top1_mean=cur_dcfci_metrics_top1_mean,
+              dcfci_metrics_top1_min=cur_dcfci_metrics_top1_min,
               dcfci_metrics=cur_dcfci_metrics))
 }
